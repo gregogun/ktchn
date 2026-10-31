@@ -1,0 +1,3 @@
+# Concrete implementations until a second one exists
+
+ktchn uses Telegram for chat, GitHub for code and issues, and pi as the agent harness, each written directly against its real API in its own module, with no interface in front. The design is ports-and-adapters in spirit, but we write an interface only when a second implementation actually arrives, because an interface designed around one implementation is a guess. Clean module boundaries are kept everywhere, so extracting an interface later is cheap. (Sandcastle's own agent-provider interface already gives some harness flexibility at no cost to us.)
