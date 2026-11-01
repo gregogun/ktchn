@@ -61,8 +61,12 @@ How to do one kind of work, and what done looks like for it.
 _Avoid_: playbook, procedure, pipeline
 
 **Classification**:
-Deciding which workflow a job follows: from its labels first, then by inference from its content, and otherwise the general workflow or a question to the owner.
+Deciding which workflow a job follows and which model runs it. The workflow comes from the job's labels first, then by inference from its content, and otherwise the general workflow or a question to the owner. The model is a judgement of the job's size, made from the model table.
 _Avoid_: routing, triage
+
+**Model table**:
+The kitchen's list of models by role, each with its effort and when to use it. Classification picks an agent's model from it.
+_Avoid_: model config, model roles, model list
 
 **General workflow**:
 The catch-all workflow for a job classification couldn't place. It always runs supervised.
