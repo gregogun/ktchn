@@ -32,6 +32,18 @@ _Avoid_: order, task
 One attempt at a job, from start until it is done or failed, including any time spent parked.
 _Avoid_: execution, session
 
+**Failed run**:
+A run that ended because its work couldn't be carried through, such as when it couldn't pass review.
+_Avoid_: errored run, broken run
+
+**Cancelled run**:
+A run the owner stopped, whatever state it was in and however it was going.
+_Avoid_: aborted run, killed run, stopped run
+
+**Dropped job**:
+A job the owner has given up on, so it gets no more runs.
+_Avoid_: cancelled job, closed job, abandoned job
+
 **Ticket**:
 An item in the tracker describing work someone wants. It becomes a job only when the owner hands it over.
 _Avoid_: issue, task
