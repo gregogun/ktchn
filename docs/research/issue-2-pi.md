@@ -18,6 +18,7 @@ Method: read the bundled docs (`PI/docs/*.md`, `PI/README.md`) and the compiled 
 ## 1. Where sessions are written and how a session is resumed
 
 **Storage location.**
+
 - Agent dir: `PI_CODING_AGENT_DIR` if set, else `~/.pi/agent` (`PI/dist/config.js` 359-372, `getAgentDir`).
 - Session dir: `getDefaultSessionDir(cwd)` returns `<agentDir>/sessions/--<cwd with leading slash stripped and / \ : replaced by ->--`, creating the directory if missing (`PI/dist/core/session-manager.js` 212-219).
 - Override: `--session-dir` flag, and `sessionDir` in settings. Precedence is in `PI/dist/main.js` (around 154-217). The env var name is `ENV_SESSION_DIR` (`PI/dist/config.js` 337-341). Docs: `PI/docs/settings.md` 164-170, 200-203; `PI/docs/sessions.md`.
@@ -28,6 +29,7 @@ Method: read the bundled docs (`PI/docs/*.md`, `PI/README.md`) and the compiled 
 **Lazy creation.** The file is not written until the first assistant message: `PI/dist/core/session-manager.js` 264-276 (persistence) and 549-568 (lazy). Consequence: a run that is killed before its first assistant turn leaves no resumable session, and a resume target may not exist yet.
 
 **Resume and selection flags.** Documented in `PI/docs/sessions.md` and `PI/dist/cli/args.js` (around 110-132, help text 214-232):
+
 - `--continue` / `-c`: resume the most recent session. Selection is by mtime via `findMostRecentSession` (`session-manager.js` 994-1002). Sharp edge: when `--session-dir` is shared across cwds, this is not filtered by cwd (from reading the code, not run-tested).
 - `--session <path|id>`: open a specific session.
 - `--resume`: interactive picker.
@@ -46,11 +48,13 @@ Selection and missing-cwd handling are in `PI/dist/main.js` 344 and 383-400. In 
 Supported `api` values per `PI/docs/models.md`: `openai-completions`, `openai-responses`, `anthropic-messages`, `google-generative-ai`.
 
 Validation (`PI/dist/core/model-registry.js` 380-396):
+
 - A non-built-in provider that defines models must set `baseUrl` and `apiKey`.
 - A built-in provider with custom models may leave `baseUrl`/`apiKey`/`api` optional.
 - An override-only config needs at least one of `baseUrl`, `headers`, `compat`, `modelOverrides`, or `models`.
 
 **API key resolution.** `PI/dist/core/resolve-config-value.js` 1-14:
+
 - Value starting with `!` runs the rest as a shell command and uses stdout (cached for the process lifetime).
 - Otherwise an environment variable with that name is used if set, else the string is taken as a literal (not cached).
 - Credential order is documented in `PI/docs/providers.md`: CLI `--api-key`, then `auth.json`, then env var, then `models.json` custom key. `auth.json` is mode 0600. This review did not read `~/.pi/agent/auth.json`.
@@ -65,6 +69,7 @@ Validation (`PI/dist/core/model-registry.js` 380-396):
 ## 3. What pi emits on its JSON / RPC output stream
 
 **`--mode json`** (`PI/dist/modes/print-mode.js` 14-130; `PI/docs/json.md` 7-76):
+
 - First line: the session header (`session.sessionManager.getHeader()`, lines 79-91).
 - Then every session event via `session.subscribe`, one `JSON.stringify(event)` per line on stdout (lines 79-91). Event types are `AgentSessionEvent`s as listed in `PI/docs/json.md`.
 - Stdout is protected by `takeOverStdout` (`PI/dist/core/output-guard.js` 1-20), which redirects stray writes to stderr.
@@ -74,6 +79,7 @@ Validation (`PI/dist/core/model-registry.js` 380-396):
 **Mode selection** (`PI/dist/main.js` 75-85): `--mode rpc` and `--mode json` win. Otherwise print mode is used if `-p`/`--print` is given **or stdin is not a TTY**. A non-TTY stdin silently forces print mode.
 
 **`--mode rpc`** (`PI/docs/rpc.md`; `PI/dist/modes/rpc/rpc-mode.js`):
+
 - Framing: LF-only JSONL in both directions (`PI/dist/modes/rpc/jsonl.js` 8-48; `rpc.md` 27-36). Stdin reader is a line reader (rpc-mode.js around 257).
 - Stdin: commands. Stdout: command responses plus events. Streaming behaviour for messages sent during a run is governed by `streamingBehavior` (`rpc.md` 55-64).
 - Extension UI: `extension_ui_request` events (rpc-mode.js 27, 588-595). Dialog timeout is applied only if the request supplies one, so a dialog with no timeout can block an unattended run indefinitely (from code reading; not run-tested).
@@ -85,14 +91,15 @@ Gate function, `PI/dist/core/telemetry.js` 1-8: `isInstallTelemetryEnabled(setti
 
 Items that can reach the network:
 
-| Item | Where | Gate | Target |
-|---|---|---|---|
-| Install / changelog ping | `PI/dist/modes/interactive/interactive-mode.js` 615-651 | Interactive mode only; fresh install or changelog-detected update; skipped if `PI_OFFLINE` set; also gated by telemetry flag | `https://pi.dev/api/report-install?version=...` |
-| Version check | `PI/dist/utils/version-check.js` 2, 43-46 | Skipped if `PI_SKIP_VERSION_CHECK` or `PI_OFFLINE` is set | `https://pi.dev/api/latest-version` |
-| Attribution headers | `PI/dist/core/sdk.js` 27-40, 195-210 | Gated by telemetry flag; only added for OpenRouter and Cloudflare hosts | Headers on model requests to those providers |
-| `fd` / `rg` binary download | `PI/dist/utils/tools-manager.js` 20-40, 98-110 | Used only when `fd`/`rg` are not on PATH | GitHub releases |
+| Item                        | Where                                                   | Gate                                                                                                                         | Target                                          |
+| --------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Install / changelog ping    | `PI/dist/modes/interactive/interactive-mode.js` 615-651 | Interactive mode only; fresh install or changelog-detected update; skipped if `PI_OFFLINE` set; also gated by telemetry flag | `https://pi.dev/api/report-install?version=...` |
+| Version check               | `PI/dist/utils/version-check.js` 2, 43-46               | Skipped if `PI_SKIP_VERSION_CHECK` or `PI_OFFLINE` is set                                                                    | `https://pi.dev/api/latest-version`             |
+| Attribution headers         | `PI/dist/core/sdk.js` 27-40, 195-210                    | Gated by telemetry flag; only added for OpenRouter and Cloudflare hosts                                                      | Headers on model requests to those providers    |
+| `fd` / `rg` binary download | `PI/dist/utils/tools-manager.js` 20-40, 98-110          | Used only when `fd`/`rg` are not on PATH                                                                                     | GitHub releases                                 |
 
 Notes:
+
 - The install ping is not sent from print, JSON, or RPC modes (interactive-only per interactive-mode.js 615-651). Unattended runs in json/rpc therefore do not emit it, per code.
 - `tools-manager` runs for `fd`/`rg` through `ensureTool` (`find.js` 158, `grep.js` 95, `interactive-mode.js` 389). Whether it runs in non-interactive modes via `find`/`grep` tool calls is by code reading; a network download can happen during a tool call. Whether `--offline` (if it exists) covers it is **unconfirmed**.
 - Telemetry flag does not cover `fd`/`rg` downloads or the version check.
@@ -104,6 +111,7 @@ Notes:
 **Injection.** `formatSkillsForPrompt` (`PI/dist/core/skills.js` 261-282) emits an `<available_skills>` XML block. `loadSkills` (skills.js 305-404) handles `includeDefaults`; explicit `--skill` paths are loaded. The system prompt builder (`PI/dist/core/system-prompt.js` 19-41, 111-115) appends skills and context files to a custom prompt, and has a default branch.
 
 **Flags:**
+
 - `--no-skills`: `PI/dist/core/resource-loader.js` 292-294. When `noSkills` is true, skill paths are the CLI-enabled skills plus `additionalSkillPaths`; settings and default-root skills (`enabledSkills`) are dropped. So `--no-skills` removes pi's own discovery, while `--skill <path>` still adds explicit skills. Verified by reading the ternary only.
 - `--skill <path>`: explicit load (`skills.js` 305-404; `args.js` 62-63).
 - `updateSkillsFromPaths` with `includeDefaults` false: `resource-loader.js` 231-294, 323, 344-360.
