@@ -1,0 +1,3 @@
+# Classification picks the model, from one kitchen-wide table
+
+A run's model is chosen by judgement during classification, not fixed by its workflow. Classification reads the job, picks the cheapest row of the model table that fits it, and records its reason in the ledger. Fixing a model per workflow would make a workflow's results easier to compare. But the size of a job varies more within a workflow than between workflows, and a model can judge that size well. The constraint is the table itself: one list in ktchn, edited by the owner, with no per-workflow model lists until one shared table proves too loose. The owner can override the pick for a job, and the ledger keeps both. A run keeps one model, except that the owner may name another on resume.

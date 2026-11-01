@@ -32,6 +32,18 @@ _Avoid_: order, task
 One attempt at a job, from start until it is done or failed, including any time spent parked.
 _Avoid_: execution, session
 
+**Failed run**:
+A run that ended because its work couldn't be carried through, such as when it couldn't pass review.
+_Avoid_: errored run, broken run
+
+**Cancelled run**:
+A run the owner stopped, whatever state it was in and however it was going.
+_Avoid_: aborted run, killed run, stopped run
+
+**Dropped job**:
+A job the owner has given up on, so it gets no more runs.
+_Avoid_: cancelled job, closed job, abandoned job
+
 **Ticket**:
 An item in the tracker describing work someone wants. It becomes a job only when the owner hands it over.
 _Avoid_: issue, task
@@ -49,8 +61,12 @@ How to do one kind of work, and what done looks like for it.
 _Avoid_: playbook, procedure, pipeline
 
 **Classification**:
-Deciding which workflow a job follows: from its labels first, then by inference from its content, and otherwise the general workflow or a question to the owner.
+Deciding which workflow a job follows and which model runs it. The workflow comes from the job's labels first, then by inference from its content, and otherwise the general workflow or a question to the owner. The model is a judgement of the job's size, made from the model table.
 _Avoid_: routing, triage
+
+**Model table**:
+The kitchen's list of models by role, each with its effort and when to use it. Classification picks an agent's model from it.
+_Avoid_: model config, model roles, model list
 
 **General workflow**:
 The catch-all workflow for a job classification couldn't place. It always runs supervised.
