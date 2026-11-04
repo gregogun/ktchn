@@ -14,19 +14,19 @@ Paths below are relative to that repo unless they start with `/`.
 
 ## 1. Pi versus claudeCode: session capture and resume
 
-| Capability | claudeCode | pi |
-|---|---|---|
-| Provider name | `name: "claude-code"` at `src/AgentProvider.ts:1608` | `name: "pi"` at `src/AgentProvider.ts:863` |
-| Session capture default | Capture on | `captureSessions: options?.captureSessions ?? true` at `src/AgentProvider.ts:865` |
-| Session storage | `makeClaudeSessionStorage`, `src/AgentProvider.ts:513-560`, host capture at 531 | `makePiSessionStorage`, `src/AgentProvider.ts:667-712`, host capture at 695, resume into sandbox at 712 |
-| Session ID source | Init line | Stream `session` header, `src/AgentProvider.ts:788` |
-| Resume flag | `--resume <id>`, `src/AgentProvider.ts:1629-1637` | `--session <id>`, `src/AgentProvider.ts:882-886` |
-| Fork flag | `--fork-session` (only with resume), `src/AgentProvider.ts:1629-1637` | `--fork <id>`, which copies to a new session, `src/AgentProvider.ts:882-886` |
-| Fork support flag | Not set (default fork allowed) | Not set (default fork allowed); `canFork: false` is set for cursor and copilot at `src/AgentProvider.ts:1144` and `1519` |
-| Usage parsing | `parseSessionUsage`, `src/AgentProvider.ts:1662` | Not implemented (no `parseSessionUsage` in the pi provider) |
-| Context window | Available from captured JSONL | Taken from `message_end`, `src/AgentProvider.ts:793` |
-| Final result | From the stream `result` event | From `agent_end` messages, `src/AgentProvider.ts:751` and `830` |
-| Subagent capture | Best-effort, `src/AgentProvider.ts:550` | Not observed in pi code (unconfirmed whether pi emits subagent sessions) |
+| Capability              | claudeCode                                                                      | pi                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Provider name           | `name: "claude-code"` at `src/AgentProvider.ts:1608`                            | `name: "pi"` at `src/AgentProvider.ts:863`                                                                               |
+| Session capture default | Capture on                                                                      | `captureSessions: options?.captureSessions ?? true` at `src/AgentProvider.ts:865`                                        |
+| Session storage         | `makeClaudeSessionStorage`, `src/AgentProvider.ts:513-560`, host capture at 531 | `makePiSessionStorage`, `src/AgentProvider.ts:667-712`, host capture at 695, resume into sandbox at 712                  |
+| Session ID source       | Init line                                                                       | Stream `session` header, `src/AgentProvider.ts:788`                                                                      |
+| Resume flag             | `--resume <id>`, `src/AgentProvider.ts:1629-1637`                               | `--session <id>`, `src/AgentProvider.ts:882-886`                                                                         |
+| Fork flag               | `--fork-session` (only with resume), `src/AgentProvider.ts:1629-1637`           | `--fork <id>`, which copies to a new session, `src/AgentProvider.ts:882-886`                                             |
+| Fork support flag       | Not set (default fork allowed)                                                  | Not set (default fork allowed); `canFork: false` is set for cursor and copilot at `src/AgentProvider.ts:1144` and `1519` |
+| Usage parsing           | `parseSessionUsage`, `src/AgentProvider.ts:1662`                                | Not implemented (no `parseSessionUsage` in the pi provider)                                                              |
+| Context window          | Available from captured JSONL                                                   | Taken from `message_end`, `src/AgentProvider.ts:793`                                                                     |
+| Final result            | From the stream `result` event                                                  | From `agent_end` messages, `src/AgentProvider.ts:751` and `830`                                                          |
+| Subagent capture        | Best-effort, `src/AgentProvider.ts:550`                                         | Not observed in pi code (unconfirmed whether pi emits subagent sessions)                                                 |
 
 Orchestration:
 
@@ -55,13 +55,13 @@ The `.git` pointer file and parent `.git` directory are mounted read-write first
 
 Control paths locked (`src/protectGitMounts.ts`):
 
-| Path | Lines | Locked by |
-|---|---|---|
-| `<commonDir>/config` | 72-77 | `commonDirControlPaths` |
-| `<commonDir>/hooks` (created if missing) | 72-77 | `commonDirControlPaths` |
-| `<commonDir>/info` (created if missing) | 72-77 | `commonDirControlPaths` |
-| Worktree `.git` pointer file | 80-102 | `linkedWorktreeControlPaths` |
-| `<adminDir>/commondir` | 80-102 | `linkedWorktreeControlPaths` |
+| Path                                     | Lines  | Locked by                    |
+| ---------------------------------------- | ------ | ---------------------------- |
+| `<commonDir>/config`                     | 72-77  | `commonDirControlPaths`      |
+| `<commonDir>/hooks` (created if missing) | 72-77  | `commonDirControlPaths`      |
+| `<commonDir>/info` (created if missing)  | 72-77  | `commonDirControlPaths`      |
+| Worktree `.git` pointer file             | 80-102 | `linkedWorktreeControlPaths` |
+| `<adminDir>/commondir`                   | 80-102 | `linkedWorktreeControlPaths` |
 
 Left writable (not in the overlay list):
 
@@ -106,23 +106,23 @@ Validation: `head` with `isolated` is refused, `src/run.ts:536`. `copyToWorktree
 
 ## Gaps table
 
-| Gap | Evidence | Classification | Why |
-|---|---|---|---|
-| No egress allowlist for Docker | `src/sandboxes/docker.ts:71-78`, `src/DockerLifecycle.ts:128-130` | wrap | Sandcastle passes `--network` through only. ktchn needs an external network with a proxy. Upstream feature request is optional. |
-| No Docker DNS, proxy, or cap options | `src/sandboxes/docker.ts:60-130` | upstream | Missing options block a proper containment story (ADR 0004). |
-| Worktree `config.worktree` not locked | `src/protectGitMounts.ts:72-102` (not listed), scratch experiment | fork | Exposed only when the host has `extensions.worktreeConfig`. A fork can add `config.worktree` to the overlay list. |
-| Refs and `packed-refs` writable | `src/protectGitMounts.ts:72-102`, `src/SandboxFactory.ts:350-368` | upstream | Sandbox must write refs to commit. Protection would need a per-branch policy, which is a design choice upstream should make. Wrap by snapshotting refs before and after. |
-| `HEAD`, `index`, `logs` writable | `src/protectGitMounts.ts:72-102` | wrap | Low risk for ktchn if the host checks `git rev-parse` after the run. |
-| `modules/` (submodules) not handled | `src/protectGitMounts.ts:72-102` (not listed), `src/hostGitConfig.ts:31-44` pins `submodule.recurse=false` | fork | Submodule admin dirs are unlocked. Runtime behaviour unconfirmed. |
-| No post-agent hook | `src/SandboxLifecycle.ts:443-537` | upstream or wrap | ktchn can wrap by running checks after `run()` resolves. Upstream hook would let checks run before commit. |
-| Pre-flight available | `src/createWorktree.ts:251-253`, `src/createSandbox.ts:989-992` | (no gap) | `host.onWorktreeReady` covers pre-flight. |
-| No secret scan on output | None found | wrap | ADR 0005 puts credential handling on ktchn. Add a scan after run. |
-| Env from `.sandcastle/.env` reaches container | `src/EnvResolver.ts:52-69`, `src/DockerLifecycle.ts` env `-e` flags | wrap | Conflicts with ADR 0005 if the file holds credentials. ktchn should keep that file free of secrets. |
-| Uncommitted changes preserve worktree | `src/createSandbox.ts:1136-1160` | wrap | ktchn must read `preservedWorktreePath` and handle it, not treat it as failure. |
-| Pi has no usage parsing | `src/AgentProvider.ts:1662` (claudeCode only) | upstream | Token accounting for pi runs is missing. |
-| Pi has no subagent capture | `src/AgentProvider.ts:550` (claudeCode only) | upstream | Unconfirmed whether pi emits subagent sessions at all. |
-| Pi `captureSessions` doc comment stale | `src/AgentProvider.ts:423` says default is false for non-Claude | upstream | Code at 865 defaults to true. Doc nit only. |
-| Pi resume and fork work | `src/AgentProvider.ts:882-886`, `src/AgentProvider.ts:788` | (no gap) | Supported. Pi rejects `--fork` with `--session`, so sandcastle must not combine them. |
+| Gap                                           | Evidence                                                                                                   | Classification   | Why                                                                                                                                                                      |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No egress allowlist for Docker                | `src/sandboxes/docker.ts:71-78`, `src/DockerLifecycle.ts:128-130`                                          | wrap             | Sandcastle passes `--network` through only. ktchn needs an external network with a proxy. Upstream feature request is optional.                                          |
+| No Docker DNS, proxy, or cap options          | `src/sandboxes/docker.ts:60-130`                                                                           | upstream         | Missing options block a proper containment story (ADR 0004).                                                                                                             |
+| Worktree `config.worktree` not locked         | `src/protectGitMounts.ts:72-102` (not listed), scratch experiment                                          | fork             | Exposed only when the host has `extensions.worktreeConfig`. A fork can add `config.worktree` to the overlay list.                                                        |
+| Refs and `packed-refs` writable               | `src/protectGitMounts.ts:72-102`, `src/SandboxFactory.ts:350-368`                                          | upstream         | Sandbox must write refs to commit. Protection would need a per-branch policy, which is a design choice upstream should make. Wrap by snapshotting refs before and after. |
+| `HEAD`, `index`, `logs` writable              | `src/protectGitMounts.ts:72-102`                                                                           | wrap             | Low risk for ktchn if the host checks `git rev-parse` after the run.                                                                                                     |
+| `modules/` (submodules) not handled           | `src/protectGitMounts.ts:72-102` (not listed), `src/hostGitConfig.ts:31-44` pins `submodule.recurse=false` | fork             | Submodule admin dirs are unlocked. Runtime behaviour unconfirmed.                                                                                                        |
+| No post-agent hook                            | `src/SandboxLifecycle.ts:443-537`                                                                          | upstream or wrap | ktchn can wrap by running checks after `run()` resolves. Upstream hook would let checks run before commit.                                                               |
+| Pre-flight available                          | `src/createWorktree.ts:251-253`, `src/createSandbox.ts:989-992`                                            | (no gap)         | `host.onWorktreeReady` covers pre-flight.                                                                                                                                |
+| No secret scan on output                      | None found                                                                                                 | wrap             | ADR 0005 puts credential handling on ktchn. Add a scan after run.                                                                                                        |
+| Env from `.sandcastle/.env` reaches container | `src/EnvResolver.ts:52-69`, `src/DockerLifecycle.ts` env `-e` flags                                        | wrap             | Conflicts with ADR 0005 if the file holds credentials. ktchn should keep that file free of secrets.                                                                      |
+| Uncommitted changes preserve worktree         | `src/createSandbox.ts:1136-1160`                                                                           | wrap             | ktchn must read `preservedWorktreePath` and handle it, not treat it as failure.                                                                                          |
+| Pi has no usage parsing                       | `src/AgentProvider.ts:1662` (claudeCode only)                                                              | upstream         | Token accounting for pi runs is missing.                                                                                                                                 |
+| Pi has no subagent capture                    | `src/AgentProvider.ts:550` (claudeCode only)                                                               | upstream         | Unconfirmed whether pi emits subagent sessions at all.                                                                                                                   |
+| Pi `captureSessions` doc comment stale        | `src/AgentProvider.ts:423` says default is false for non-Claude                                            | upstream         | Code at 865 defaults to true. Doc nit only.                                                                                                                              |
+| Pi resume and fork work                       | `src/AgentProvider.ts:882-886`, `src/AgentProvider.ts:788`                                                 | (no gap)         | Supported. Pi rejects `--fork` with `--session`, so sandcastle must not combine them.                                                                                    |
 
 ## Unconfirmed items
 
