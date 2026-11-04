@@ -4,7 +4,6 @@ ktchn is a software kitchen: the owner hands over jobs and agents carry them out
 
 - Use the terms in [GLOSSARY.md](GLOSSARY.md) exactly. Don't invent synonyms in code, comments or docs.
 - Settled architecture lives in [docs/adr/](docs/adr/). Follow it; propose a new ADR rather than working around one.
-- The owner hand-writes the core: domain types, the run state machine and the ledger. Agents write adapters around it. Don't edit core modules unless asked to.
 
 ## Layout
 
