@@ -4,7 +4,7 @@ type AgentInput =
   | { kind: 'job' }
   | { kind: 'answer'; answer: string }
   | { kind: 'findings'; findings: string }
-  | { kind: 'continue' };
+  | { kind: 'resume' };
 
 type Queued = {
   status: 'queued';
@@ -171,12 +171,15 @@ export const transition = (
           if (!state.parkRequested) break;
           return park(state, { kind: 'owner_parked' });
         case 'Crashed':
+          if (state.parkRequested) {
+            return park(state, { kind: 'owner_parked' });
+          }
           if (!state.crashResumed) {
             return {
               state: {
                 status: 'queued',
                 input: {
-                  kind: 'continue',
+                  kind: 'resume',
                 },
                 crashResumed: true,
                 reviewsLeft: state.reviewsLeft,
@@ -194,7 +197,7 @@ export const transition = (
           return {
             state: {
               status: 'queued',
-              input: { kind: 'continue' },
+              input: { kind: 'resume' },
               crashResumed: state.crashResumed,
               reviewsLeft: state.reviewsLeft,
             },
@@ -204,6 +207,7 @@ export const transition = (
             ],
           };
         case 'OwnerResumed':
+          if (state.reason.kind === 'budget_exhausted') break;
           return {
             state: {
               status: 'queued',
@@ -233,6 +237,7 @@ export const transition = (
     case 'in_review':
       switch (event.type) {
         case 'ReviewPassed':
+          if (state.step !== 'reviewing') break;
           return {
             state: {
               ...state,
@@ -249,7 +254,16 @@ export const transition = (
             },
             effects: [{ type: 'KillSandbox' }, { type: 'SendReport' }],
           };
+        case 'Crashed':
+          if (state.crashResumed) {
+            return park(state, { kind: 'second_crash' });
+          }
+          return {
+            state: { ...state, step: 'reviewing', crashResumed: true },
+            effects: [{ type: 'RunReview' }],
+          };
         case 'ReviewFailed':
+          if (state.step !== 'reviewing') break;
           if (state.reviewsLeft === 1) {
             return park(state, {
               kind: 'review_exhausted',

@@ -150,6 +150,17 @@ describe('review', () => {
     );
     expect(state).toMatchObject({ status: 'queued', reviewsLeft: 3 });
   });
+
+  test.each([
+    { type: 'ReviewPassed' },
+    { type: 'ReviewFailed', findings: 'late' },
+  ] as const)('a passed review ignores a later $type', (event) => {
+    const before = inReview({ step: 'opening_pr' });
+    expect(runMachine.transition(before, event)).toEqual({
+      state: before,
+      effects: [],
+    });
+  });
 });
 
 describe('parking', () => {
@@ -213,7 +224,7 @@ describe('parking', () => {
         budget: 20,
       }
     );
-    expect(state).toEqual(queued({ input: { kind: 'continue' } }));
+    expect(state).toEqual(queued({ input: { kind: 'resume' } }));
     expect(effects).toEqual([
       { type: 'SetBudget', budget: 20 },
       { type: 'Enqueue', position: 'front' },
@@ -224,6 +235,13 @@ describe('parking', () => {
     const before = parked();
     expect(
       runMachine.transition(before, { type: 'OwnerRaisedBudget', budget: 20 })
+    ).toEqual({ state: before, effects: [] });
+  });
+
+  test('an answer does not resume a budget-parked run', () => {
+    const before = parked({ reason: { kind: 'budget_exhausted' } });
+    expect(
+      runMachine.transition(before, { type: 'OwnerResumed', answer: 'go on' })
     ).toEqual({ state: before, effects: [] });
   });
 
@@ -249,7 +267,7 @@ describe('crashes', () => {
     });
     expect(state).toMatchObject({
       status: 'queued',
-      input: { kind: 'continue' },
+      input: { kind: 'resume' },
       crashResumed: true,
     });
     expect(effects).toEqual([{ type: 'Enqueue', position: 'front' }]);
@@ -261,6 +279,44 @@ describe('crashes', () => {
       {
         type: 'Crashed',
       }
+    );
+    expect(state).toMatchObject({
+      status: 'parked',
+      reason: { kind: 'second_crash' },
+    });
+    expect(effects.map((e) => e.type)).toEqual(PARK_EFFECTS);
+  });
+
+  test('a crash with an owner park pending parks the run', () => {
+    const { state, effects } = runMachine.transition(
+      running({ parkRequested: true }),
+      { type: 'Crashed' }
+    );
+    expect(state).toMatchObject({
+      status: 'parked',
+      reason: { kind: 'owner_parked' },
+    });
+    expect(effects.map((e) => e.type)).toEqual(PARK_EFFECTS);
+  });
+
+  test.each(['reviewing', 'opening_pr'] as const)(
+    'a crash while %s starts review over',
+    (step) => {
+      const { state, effects } = runMachine.transition(
+        inReview({ step, reviewsLeft: 2 }),
+        { type: 'Crashed' }
+      );
+      expect(state).toEqual(
+        inReview({ step: 'reviewing', reviewsLeft: 2, crashResumed: true })
+      );
+      expect(effects).toEqual([{ type: 'RunReview' }]);
+    }
+  );
+
+  test('a second crash during review parks the run', () => {
+    const { state, effects } = runMachine.transition(
+      inReview({ crashResumed: true }),
+      { type: 'Crashed' }
     );
     expect(state).toMatchObject({
       status: 'parked',
