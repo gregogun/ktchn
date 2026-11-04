@@ -124,6 +124,12 @@ _Avoid_: permissions, rules
 The most a run may spend on models before it is stopped.
 _Avoid_: limit, quota
 
+### Reaching the owner
+
+**Channel**:
+A way the kitchen and the owner reach each other: reports go out through it and answers to parked runs come back.
+_Avoid_: adapter, integration, messenger
+
 ### Record
 
 **Ledger**:
