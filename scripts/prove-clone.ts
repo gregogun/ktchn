@@ -230,6 +230,15 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   assert.equal(git(w.repo, 'rev-parse', 'main'), w.base);
   console.log('  owner refs after:\n' + after.refs.replace(/^/gm, '    '));
   assert.equal(state.status, 'in_review');
+  assert(
+    !ktchnLeftovers().volumes.includes(`ktchn-${w.runId}`),
+    'a handed-off run keeps no volume'
+  );
+  assert(
+    existsSync(runDir(w.home, w.runId)),
+    'a handed-off run keeps its clone'
+  );
+  console.log('  handed off: volume removed, clone kept');
   console.log('events', names(w.ledger, w.runId));
   assert.equal(runContainers(w.runId).length, 0);
   w.cleanup();
