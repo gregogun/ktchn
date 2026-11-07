@@ -36,17 +36,13 @@ export const boundAgentEnv = (
           options?.onOutput?.(`\n[ktchn: ${text}]\n`, context, {
             stream: 'stderr',
           });
-        if (asked !== undefined && asked > maxSeconds) {
-          say(
-            `the timeout of ${asked}s is above the ceiling, so ${maxSeconds}s applies`
-          );
-        }
         let produced = 0;
         let overLimit = false;
+        const { window: _window, spill: _spill, ...rest } = options ?? {};
         const result = await target.exec(
           command,
           {
-            ...options,
+            ...rest,
             timeout: seconds,
             onOutput: (text, textContext, info) => {
               if (overLimit) return;
@@ -61,6 +57,11 @@ export const boundAgentEnv = (
           },
           bounded
         );
+        if (asked !== undefined && asked > maxSeconds) {
+          say(
+            `the timeout of ${asked}s is above the ceiling, so ${maxSeconds}s applies`
+          );
+        }
         if (overLimit) {
           say(
             `the command printed more than ${limits.maxOutputBytes} bytes, so ${result.ok ? 'the rest of its output was dropped' : 'it was killed'}`

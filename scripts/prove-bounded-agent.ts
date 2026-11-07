@@ -115,10 +115,14 @@ const script = async (sandbox: Sandbox) => {
   );
   check(big.noted.includes('printed more than'), 'and the agent was told');
   check(big.produced < 5_000_000, 'endless output was capped near 1 MiB');
-  assert(big.spillPath !== undefined, 'the endless output reported a spill');
-  const stat = await sandbox.exec(`stat -c %s ${big.spillPath}`);
-  outcome.spill = Number(stat.stdout.trim());
-  console.log(`  spill file ${big.spillPath}: ${outcome.spill} bytes`);
+  const stat =
+    big.spillPath === undefined
+      ? undefined
+      : await sandbox.exec(`stat -c %s ${big.spillPath}`);
+  outcome.spill = stat === undefined ? 0 : Number(stat.stdout.trim());
+  console.log(
+    `  spill file ${big.spillPath ?? '(none)'}: ${outcome.spill} bytes`
+  );
   check(outcome.spill < 2 * 1024 * 1024, 'the spill file stayed near 1 MiB');
   check(
     !hang.result.ok && hang.result.error.code === 'timeout',

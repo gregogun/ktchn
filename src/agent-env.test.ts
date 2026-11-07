@@ -81,6 +81,21 @@ describe('boundAgentEnv timeouts', () => {
     expect(out.text.join('')).toContain('30s applies');
   });
 
+  test('says the timeout was clamped after the command output, where a tail keeps it', async () => {
+    const { env } = recorder(async (options, context) => {
+      options.onOutput?.('a'.repeat(60), context, { stream: 'stdout' });
+      return { ok: true, value: {} };
+    });
+    const out = collect();
+    await boundAgentEnv(env, limits).exec(
+      'x',
+      { timeout: 3600, onOutput: out.onOutput },
+      ctx
+    );
+    expect(out.text[0]).toBe('a'.repeat(60));
+    expect(out.text.at(-1)).toContain('3600s is above the ceiling');
+  });
+
   test('reports a timeout in the output and returns the env result unchanged', async () => {
     const failure = { ok: false, error: { code: 'timeout' } };
     const { env } = recorder(async () => failure);
@@ -137,6 +152,29 @@ describe('boundAgentEnv output', () => {
     });
     await boundAgentEnv(env, limits).exec('x', undefined, ctx);
     expect(cancelled).toBe(true);
+  });
+});
+
+describe('boundAgentEnv limits on what the environment keeps', () => {
+  test('drops the output window and the spill, so every byte is counted and none is written to a file', async () => {
+    const { env, seen } = recorder();
+    await boundAgentEnv(env, limits).exec(
+      'x',
+      {
+        cwd: '/w',
+        spill: { afterBytes: 1, afterLines: 1 },
+        window: {
+          maxBytes: 1,
+          maxLines: 1,
+          minIntervalMs: 1,
+          bytesPerSecond: 1,
+        },
+      },
+      ctx
+    );
+    expect(seen[0]?.options.window).toBeUndefined();
+    expect(seen[0]?.options.spill).toBeUndefined();
+    expect(seen[0]?.options.cwd).toBe('/w');
   });
 });
 
