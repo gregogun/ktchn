@@ -55,11 +55,15 @@ Each round's sandbox is a container with a collect and a review variant, run by 
 
 - The agent's container has the volume and the pi-env directory. The collect container has the volume and no pi-env, and exists only to read the round's data out. The review container has neither a volume nor pi-env, and holds one commit.
 - Every container drops all capabilities, sets `no-new-privileges`, and has a limit on processes (`--pids-limit 512`) and on memory (`--memory 2g`). The `chown` helper that prepares a new volume keeps only `CHOWN`.
-- Every command through `exec` has a timeout and a cap on output. The default is 10 minutes and 1 MiB, and a caller may pass its own. A command that outruns either is killed: the `docker exec` client is sent SIGKILL and everything in the container but its init is killed too, because killing the client leaves its command running. Collect treats a stopped command as a failed round with a finding for the agent, not a crash, so a resume cannot loop on it. The status and check text that goes back to the agent is capped.
+- Every command through `exec` has a timeout and a cap on output. The default is 10 minutes and 1 MiB, and a caller may pass its own. A command that outruns either is killed: the `docker exec` client is sent SIGKILL, and the command's own process group in the container is killed too, because killing the client leaves its command running. Each command runs under `setsid` as the leader of a new group, so the kill reaches its children and nothing else, not the pi-env daemon or another command. Collect treats a stopped command as a failed round with a finding for the agent, not a crash, so a resume cannot loop on it. The status and check text that goes back to the agent is capped.
 - A pack is capped in two places: the host stops reading the stream at 256 MiB, and `index-pack --max-input-size` refuses one that claims more.
 - A collected commit must descend from the commit the run started from (`merge-base --is-ancestor <base> <oid>`), so an agent cannot hand back an unrelated history.
-- A volume is made after its run's directory and removed again if the sandbox fails to open. Each start also removes volumes by their `ktchn.run` label, of its own home (`ktchn.home`), whose run has no directory, so a crash between the two leaks nothing.
+- A volume is made after its run's directory and removed again if the sandbox fails to open. Each start also removes volumes by their `ktchn.run` label, of its own home (`ktchn.home`), whose run has no directory, so a crash between the two leaks nothing. A volume with no `ktchn.home` label cannot be told from another home's, so the sweep reports it and never removes it.
 - Git run in the sandbox on what the agent wrote is `SAFE_GIT`: no fsmonitor, no hooks, no pager, no external diff, no attributes file, no lock taking.
+
+## The agent's own commands
+
+The agent's bash tool runs through pi-env, not `exec`, so it gets its own bounds in `src/agent-env.ts`. A command has a 10 minute timeout unless the agent asks for another, up to a ceiling of 30 minutes. A request above the ceiling runs at the ceiling, and the agent is told so after the command. Output is capped at 1 MiB across the whole command, and a command that passes it is cancelled. pi-durable's options to keep only a window of the output and spill the rest to a file are removed, so every byte is counted and nothing is written to a spill file. The cost is that on long output the model sees only the tail pi-durable keeps (about 50 KB), not the head. A spill file was the alternative, and a measured run filled one to 554 MB before the cap. The limits are named constants, `AGENT_LIMITS`.
 
 ## The network is a Policy
 
@@ -67,7 +71,7 @@ The network is a setting of the job's Policy. The agent's sandbox has no network
 
 ## The in-box script guard
 
-ktchn sends scripts into the sandbox that delete files, to clear the sandbox's copy before a seed. An earlier version of this work ran such a script on the host by mistake and deleted a project. Now every path in these scripts is absolute, and the delete runs only after the script proves that its directory is `/home/agent/copy` (`pwd -P`) and that `/etc/ktchn-sandbox` exists. Only the image built from `docker/sandbox/Dockerfile` has that file. Anywhere else the script exits 97 and deletes nothing. The vitest run has a tripwire (`vitest.global-setup.ts`) that fails if a test moves HEAD or removes a tracked file.
+ktchn sends scripts into the sandbox that delete files, to clear the sandbox's copy before a seed. An earlier version of this work ran such a script on the host by mistake and deleted a project. Now every path in these scripts is absolute, and the delete runs only after the script proves that its directory is `/home/agent/copy` (`pwd -P`) and that `/etc/ktchn-sandbox` exists. Only the image built from `docker/sandbox/Dockerfile` has that file. Anywhere else the script exits 97 and deletes nothing. The vitest run has a tripwire (`vitest.global-setup.ts`) that fails if a test moves HEAD, adds or removes a tracked file, changes a tracked file's contents, or changes `git status`.
 
 ## Host git environment
 
@@ -89,3 +93,4 @@ The `.git` preflight, the worktree layout check, `cloneGit` and its lockdown, th
 - A resumed run needs docker's volume to exist. A volume lost with a Docker disk reset costs the work since the last collect.
 - Anything new that reads what an agent wrote must take it as a pack, or not read it.
 - Old runs begun under ADR 0014 have no volume and are not migrated.
+- Nothing limits disk inside the sandbox. An agent can fill the volume with one large file.
