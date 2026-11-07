@@ -1,0 +1,88 @@
+import type { AgentRequest, CheckResult, Ledger, ModelCall } from './ledger.ts';
+import { isTerminal, type RunEvent, type RunState } from './run-machine.ts';
+
+export type AgentOutcome = {
+  event: Extract<
+    RunEvent,
+    { type: 'AgentFinished' | 'AgentAsked' | 'AgentEndedEarly' }
+  >;
+  calls: readonly ModelCall[];
+};
+
+export type ReviewOutcome = {
+  event: Extract<RunEvent, { type: 'ReviewPassed' | 'ReviewFailed' }>;
+  results: readonly CheckResult[];
+};
+
+export type RunShell = {
+  // A crash resume is given the request it carries on, so the agent session
+  // can find the one it already has.
+  runAgent: (request: AgentRequest) => Promise<AgentOutcome>;
+  runReview: () => Promise<ReviewOutcome>;
+  closeSandbox: () => Promise<void>;
+  // The reviewed commit goes to the owner. Safe to repeat.
+  handOff: (oid: string) => void;
+  // Deletes what the run left on disk. Only called once it cannot resume.
+  discard: () => Promise<void>;
+  report: (state: RunState) => void;
+};
+
+// Another driver appending to the same run is the only way an append at this
+// position is refused, so carrying on would run the run twice.
+const append = (ledger: Ledger, runId: string, at: number, event: RunEvent) => {
+  if (!ledger.appendEvent(runId, at, event)) {
+    throw new Error(
+      `Run ${runId} already has an event at position ${at}; another driver is carrying it out. Stopping.`
+    );
+  }
+};
+
+export const driveRun = async (
+  ledger: Ledger,
+  runId: string,
+  shell: RunShell
+): Promise<RunState> => {
+  let run = ledger.replay(runId);
+  // A run found mid-flight when the driver starts lost the process that was
+  // carrying it out. Opening the PR is not carried out yet, so a run waiting
+  // at that step was not cut off.
+  if (
+    run.state.status === 'running' ||
+    (run.state.status === 'in_review' && run.state.step === 'reviewing')
+  ) {
+    append(ledger, runId, run.events, { type: 'Crashed' });
+    run = ledger.replay(runId);
+  }
+
+  for (;;) {
+    if (run.state.status === 'queued') {
+      append(ledger, runId, run.events, { type: 'Dequeued' });
+    } else {
+      const effect = run.effects.find(
+        (e) => e.type === 'RunAgent' || e.type === 'RunReview'
+      );
+      if (effect?.type === 'RunAgent') {
+        if (run.agentRequest === undefined) {
+          throw new Error(`Run ${runId} resumed an agent it never started`);
+        }
+        const { event, calls } = await shell.runAgent(run.agentRequest);
+        for (const call of calls) ledger.recordModelCall(runId, call);
+        append(ledger, runId, run.events, event);
+      } else if (effect?.type === 'RunReview') {
+        const { event, results } = await shell.runReview();
+        ledger.recordChecks(runId, run.events, results);
+        append(ledger, runId, run.events, event);
+      } else {
+        for (const e of run.effects)
+          if (e.type === 'OpenPr') shell.handOff(e.oid);
+        if (run.effects.some((e) => e.type === 'KillSandbox')) {
+          await shell.closeSandbox();
+        }
+        if (isTerminal(run.state)) await shell.discard();
+        shell.report(run.state);
+        return run.state;
+      }
+    }
+    run = ledger.replay(runId);
+  }
+};

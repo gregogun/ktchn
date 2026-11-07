@@ -1,6 +1,6 @@
 type ReviewsLeft = 1 | 2 | 3;
 
-type AgentInput =
+export type AgentInput =
   | { kind: 'job' }
   | { kind: 'answer'; answer: string }
   | { kind: 'findings'; findings: string }
@@ -23,6 +23,7 @@ type Running = {
 type ParkReason =
   | { kind: 'agent_question'; question: string }
   | { kind: 'checkpoint'; question: string }
+  | { kind: 'agent_ended_early'; reason: string }
   | { kind: 'review_exhausted'; findings: string }
   | { kind: 'budget_exhausted' }
   | { kind: 'second_crash' }
@@ -59,7 +60,8 @@ export type RunState =
 export type RunEvent =
   | { type: 'Dequeued' }
   | { type: 'PrOpened'; pr: string }
-  | { type: 'ReviewPassed' }
+  // The commit review judged, which is the one handed to the owner.
+  | { type: 'ReviewPassed'; oid: string }
   | { type: 'ReviewFailed'; findings: string }
   | { type: 'OwnerResumed'; answer: string }
   | { type: 'OwnerParked' }
@@ -68,20 +70,21 @@ export type RunEvent =
   | { type: 'OwnerRaisedBudget'; budget: number }
   | { type: 'AgentFinished' }
   | { type: 'AgentStopped' }
+  | { type: 'AgentEndedEarly'; reason: string }
   | { type: 'AgentAsked'; question: string }
   | { type: 'CheckpointReached'; question: string }
   | { type: 'Crashed' }
   | { type: 'BudgetExhausted' }
   | { type: 'ReminderDue' };
 
-type Effect =
+export type Effect =
   | { type: 'RunAgent'; input: AgentInput }
   | { type: 'RunReview' }
-  | { type: 'OpenPr' }
+  | { type: 'OpenPr'; oid: string }
   | { type: 'KillSandbox' }
   | { type: 'SendReport' }
   | { type: 'ScheduleReminder' }
-  | { type: 'StopAfterTurn' }
+  | { type: 'StopAfterRound' }
   | { type: 'SendReminder' }
   | { type: 'SetBudget'; budget: number }
   | { type: 'Enqueue'; position: 'front' | 'back' };
@@ -109,14 +112,23 @@ const fewer = { 3: 2, 2: 1 } as const;
 
 const REVIEWS_PER_RUN = 3;
 
+const TERMINAL = ['done', 'failed', 'cancelled'];
+
+// A run in one of these states can never be resumed.
+export const isTerminal = (state: RunState) => TERMINAL.includes(state.status);
+
+export const newRun: RunState = {
+  status: 'queued',
+  input: { kind: 'job' },
+  reviewsLeft: REVIEWS_PER_RUN,
+  crashResumed: false,
+};
+
 export const transition = (
   state: RunState,
   event: RunEvent
 ): { state: RunState; effects: readonly Effect[] } => {
-  if (
-    event.type === 'OwnerCancelled' &&
-    !['done', 'failed', 'cancelled'].includes(state.status)
-  ) {
+  if (event.type === 'OwnerCancelled' && !isTerminal(state)) {
     return {
       state: { status: 'cancelled' },
       effects: [{ type: 'KillSandbox' }, { type: 'SendReport' }],
@@ -150,6 +162,11 @@ export const transition = (
             },
             effects: [{ type: 'RunReview' }],
           };
+        case 'AgentEndedEarly':
+          return park(state, {
+            kind: 'agent_ended_early',
+            reason: event.reason,
+          });
         case 'AgentAsked':
           return park(state, {
             kind: 'agent_question',
@@ -165,7 +182,7 @@ export const transition = (
               ...state,
               parkRequested: true,
             },
-            effects: [{ type: 'StopAfterTurn' }],
+            effects: [{ type: 'StopAfterRound' }],
           };
         case 'AgentStopped':
           if (!state.parkRequested) break;
@@ -243,7 +260,7 @@ export const transition = (
               ...state,
               step: 'opening_pr',
             },
-            effects: [{ type: 'OpenPr' }],
+            effects: [{ type: 'OpenPr', oid: event.oid }],
           };
         case 'PrOpened':
           if (state.step !== 'opening_pr') break;

@@ -52,9 +52,21 @@ _Avoid_: issue, task
 A codebase the kitchen works on, with its own setup and checks.
 _Avoid_: repo, codebase, workspace
 
+**Clone**:
+A run's trusted copy of a project, kept by the kitchen and never handed to the agent. Work comes into it only as a commit that has been checked, and whatever happens to it never changes the project.
+_Avoid_: checkout, fork, copy, workspace
+
+**Handoff**:
+Giving the owner the one commit review passed, as a branch in the project. It is the only thing a run ever puts in the project.
+_Avoid_: push, merge, publish, delivery
+
 **Sandbox**:
-The isolation boundary a run's agent works inside.
+The isolation boundary a run's agent works inside. It holds its own copy of the project, and the kitchen takes the agent's work out of it as a commit, never by reading its files.
 _Avoid_: container, box, station, workspace
+
+**Round**:
+One stretch of the agent's work within a run, from being given the job or the reviewer's findings until it stops and its work goes to review.
+_Avoid_: turn, iteration, pass, attempt
 
 **Workflow**:
 How to do one kind of work, and what done looks like for it.
@@ -117,7 +129,7 @@ To carry on a parked run once the owner has answered.
 _Avoid_: restart, retry, continue
 
 **Policy**:
-The rules for what a run may do and reach.
+The rules for what a run may do and reach. Today it is whether the run's sandbox has a network; the agent's has none unless the job asks for it, and review's never has one.
 _Avoid_: permissions, rules
 
 **Budget**:

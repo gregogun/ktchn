@@ -75,9 +75,10 @@ describe('review', () => {
   test('a passed review opens the PR but is not done yet', () => {
     const { state, effects } = runMachine.transition(inReview(), {
       type: 'ReviewPassed',
+      oid: 'abc123',
     });
     expect(state).toMatchObject({ status: 'in_review', step: 'opening_pr' });
-    expect(effects.map((e) => e.type)).toEqual(['OpenPr']);
+    expect(effects).toEqual([{ type: 'OpenPr', oid: 'abc123' }]);
   });
 
   test('done means review passed and the PR is open', () => {
@@ -152,7 +153,7 @@ describe('review', () => {
   });
 
   test.each([
-    { type: 'ReviewPassed' },
+    { type: 'ReviewPassed', oid: 'abc123' },
     { type: 'ReviewFailed', findings: 'late' },
   ] as const)('a passed review ignores a later $type', (event) => {
     const before = inReview({ step: 'opening_pr' });
@@ -180,12 +181,12 @@ describe('parking', () => {
     expect(effects.map((e) => e.type)).toEqual(PARK_EFFECTS);
   });
 
-  test('owner park lets the agent finish its current turn first', () => {
+  test('owner park lets the agent finish its current round first', () => {
     const { state, effects } = runMachine.transition(running(), {
       type: 'OwnerParked',
     });
     expect(state).toMatchObject({ status: 'running', parkRequested: true });
-    expect(effects.map((e) => e.type)).toEqual(['StopAfterTurn']);
+    expect(effects.map((e) => e.type)).toEqual(['StopAfterRound']);
   });
 
   test('the agent stopping after an owner park parks the run', () => {
@@ -200,6 +201,30 @@ describe('parking', () => {
       reason: { kind: 'owner_parked' },
     });
     expect(effects.map((e) => e.type)).toEqual(PARK_EFFECTS);
+  });
+
+  test('an agent that ends without finishing parks the run, not crashes it', () => {
+    const { state, effects } = runMachine.transition(running(), {
+      type: 'AgentEndedEarly',
+      reason: 'ran out of turns',
+    });
+    expect(state).toMatchObject({
+      status: 'parked',
+      reason: { kind: 'agent_ended_early', reason: 'ran out of turns' },
+      crashResumed: false,
+    });
+    expect(effects.map((e) => e.type)).toEqual(PARK_EFFECTS);
+  });
+
+  test('the owner can answer a run whose agent ended early and it resumes', () => {
+    const { state } = runMachine.transition(
+      parked({ reason: { kind: 'agent_ended_early', reason: 'x' } }),
+      { type: 'OwnerResumed', answer: 'carry on' }
+    );
+    expect(state).toMatchObject({
+      status: 'queued',
+      input: { kind: 'answer', answer: 'carry on' },
+    });
   });
 
   test('an owner answer resumes the run at the front of the queue', () => {
