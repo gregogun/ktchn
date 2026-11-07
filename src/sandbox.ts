@@ -24,6 +24,11 @@ const HOME_LABEL = 'ktchn.home';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const REF = /^[A-Za-z0-9._/-]+$/;
 
+// Runs "$1" as the leader of its own process group, whose id it first writes
+// to the file "$0". Timing the command out kills that group.
+const GROUPED = `exec setsid -w sh -c 'echo $$ >"$0"; exec sh -c "$1"' "$0" "$1"`;
+const KILL_GROUP = 'kill -s KILL -- -"$(cat "$0")"; rm -f "$0"';
+
 export const EXEC_TIMEOUT_MS = 10 * 60_000;
 export const MAX_OUTPUT_BYTES = 1024 * 1024;
 export const MAX_PACK_BYTES = 256 * 1024 * 1024;
@@ -243,6 +248,7 @@ export const openSandbox = async (opts: {
     throw error;
   }
 
+  let execs = 0;
   const connection = opts.piEnv
     ? new Connection({
         command: ['docker', 'exec', '-i', name, `${PI_ENV_DIR}/pi-env`],
@@ -258,26 +264,40 @@ export const openSandbox = async (opts: {
             id: `ktchn:${name}`,
             cwd: COPY_PATH,
           }),
-    exec: (command, io = {}) =>
-      runBounded({
+    exec: (command, io = {}) => {
+      const pidFile = `/tmp/ktchn-exec-${++execs}.pid`;
+      return runBounded({
         file: 'docker',
-        args: ['exec', '-i', '-w', COPY_PATH, name, 'sh', '-c', command],
+        args: [
+          'exec',
+          '-i',
+          '-w',
+          COPY_PATH,
+          name,
+          'sh',
+          '-c',
+          GROUPED,
+          pidFile,
+          command,
+        ],
         stdin: io.stdin,
         stdoutFile: io.stdoutFile,
         maxBytes: io.maxBytes ?? MAX_OUTPUT_BYTES,
         timeoutMs: io.timeoutMs ?? EXEC_TIMEOUT_MS,
         // Killing the docker client leaves its command running in the
-        // container, so everything but the container's init is killed too.
+        // container, so the command's own process group is killed too, and
+        // nothing else (the pi-env daemon is another group).
         onKill: () =>
           new Promise<void>((done) => {
             execFile(
               'docker',
-              ['exec', name, 'sh', '-c', 'kill -s KILL -- -1'],
+              ['exec', name, 'sh', '-c', KILL_GROUP, pidFile],
               { timeout: 10_000 },
               () => done()
             );
           }),
-      }),
+      });
+    },
     close: async () => {
       connection?.close();
       remove();

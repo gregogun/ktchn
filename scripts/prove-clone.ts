@@ -494,8 +494,11 @@ const inspect = (name: string, format: string) =>
   const w = world('(i)');
   await w.drive([
     async (s) => {
+      await sh(s, '(sleep 301 >/dev/null 2>&1 &)');
       const started = Date.now();
-      const r = await s.exec('sleep 300', { timeoutMs: 2000 });
+      const r = await s.exec('(sleep 300 & sleep 300; wait)', {
+        timeoutMs: 2000,
+      });
       const took = Date.now() - started;
       console.log(
         `  agent$ sleep 300 (2s timeout) -> limit ${String(r.limit)} after ${took} ms`
@@ -509,6 +512,13 @@ const inspect = (name: string, format: string) =>
         `  sleeping processes left in the container: ${left.stdout.trim()}`
       );
       assert.equal(left.stdout.trim(), '0');
+      const bystander = await s.exec(
+        "for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline; echo; done | grep -c 'slee[p] 301'; true"
+      );
+      console.log(
+        `  an unrelated sleep 301 still running: ${bystander.stdout.trim()}`
+      );
+      assert.equal(bystander.stdout.trim(), '1');
       await sh(s, 'echo alive');
       return finished;
     },
