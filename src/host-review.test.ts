@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 // A bare clone with a run branch, and a scratch repository standing in for
-// the agent's workspace that its commits are brought in from.
+// the agent's copy that its commits are brought in from.
 const makeRun = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-hr-')));
   dirs.push(root);

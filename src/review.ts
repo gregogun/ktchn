@@ -41,14 +41,14 @@ export const runChecks = async (
   return reviewOutcome(results, oid);
 };
 
-// A workspace the host could not collect from is a finding for the agent, not
+// A sandbox the host could not collect from is a finding for the agent, not
 // a crash of the run.
 export const unreadable = (error: unknown) =>
   `The work could not be collected from the sandbox: ${
     String((error as { stderr?: string }).stderr ?? error)
       .trim()
       .split('\n')[0]
-  }. Check that .git in the workspace is intact.`;
+  }. Check that .git in the sandbox's copy is intact.`;
 
 // Review of a finished round. The host looks at the commit first; only a
 // commit that passes that is checked, in a sandbox built from the commit alone.

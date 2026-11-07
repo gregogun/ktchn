@@ -13,11 +13,10 @@ import {
   packagedDaemon,
   RemoteExecutionEnv,
 } from '@earendil-works/pi-env';
+import { COPY_PATH, SEEDED, seedScript } from './box-scripts.ts';
 import { git, importPack, OID, tryGit } from './git.ts';
 
-export const WORKSPACE = '/home/agent/workspace';
 const PI_ENV_DIR = '/opt/pi-env';
-const SEEDED = '.git/ktchn-seeded';
 const REVIEW_REF = 'refs/ktchn/review';
 const LABEL = 'ktchn.run';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
@@ -56,7 +55,7 @@ const piEnvBinDir = () =>
     })
   );
 
-// Removes every container of a run, and with `withVolume` its workspace too.
+// Removes every container of a run, and with `withVolume` its volume too.
 // A crashed driver leaves its containers behind, so a resume and the sweep of
 // finished runs both call this.
 export const removeSandboxes = (runId: string, withVolume: boolean) => {
@@ -71,7 +70,7 @@ export const removeSandboxes = (runId: string, withVolume: boolean) => {
   if (withVolume) docker(['volume', 'rm', '-f', volumeName(runId)]);
 };
 
-// With a volume the sandbox's workspace outlives its container, so a run that
+// With a volume the sandbox's copy outlives its container, so a run that
 // crashes carries on from what its agent had written (ADR 0015).
 export const openSandbox = async (opts: {
   runId: string;
@@ -94,14 +93,14 @@ export const openSandbox = async (opts: {
       '-u',
       'root',
       '-v',
-      `${volume}:${WORKSPACE}`,
+      `${volume}:${COPY_PATH}`,
       '--entrypoint',
       'chown',
       opts.image,
       '1000:1000',
-      WORKSPACE,
+      COPY_PATH,
     ]);
-    mounts.push('-v', `${volume}:${WORKSPACE}`);
+    mounts.push('-v', `${volume}:${COPY_PATH}`);
   }
   if (opts.piEnv) {
     mounts.push('-v', `${realpathSync(piEnvBinDir())}:${PI_ENV_DIR}:ro`);
@@ -130,7 +129,7 @@ export const openSandbox = async (opts: {
     }
   };
   try {
-    docker(['exec', name, 'mkdir', '-p', WORKSPACE]);
+    docker(['exec', name, 'mkdir', '-p', COPY_PATH]);
   } catch (error) {
     remove();
     throw error;
@@ -149,13 +148,13 @@ export const openSandbox = async (opts: {
         : new RemoteExecutionEnv({
             connection,
             id: `ktchn:${name}`,
-            cwd: WORKSPACE,
+            cwd: COPY_PATH,
           }),
     exec: (command, io = {}) =>
       new Promise((resolve) => {
         const child = spawn(
           'docker',
-          ['exec', '-i', '-w', WORKSPACE, name, 'sh', '-c', command],
+          ['exec', '-i', '-w', COPY_PATH, name, 'sh', '-c', command],
           {
             stdio: [
               typeof io.stdin === 'number' ? io.stdin : 'pipe',
@@ -183,8 +182,6 @@ export const openSandbox = async (opts: {
   };
 };
 
-const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-
 const succeed = (result: ExecResult, what: string) => {
   if (result.exitCode !== 0) {
     throw new Error(`${what} failed in the sandbox: ${result.stderr.trim()}`);
@@ -192,8 +189,8 @@ const succeed = (result: ExecResult, what: string) => {
   return result.stdout.trim();
 };
 
-// Puts one commit and its history into the sandbox's workspace, as a bundle
-// streamed in. A workspace that already holds a seed is left alone, which is
+// Puts one commit and its history into the sandbox's copy, as a bundle
+// streamed in. A copy that already holds a seed is left alone, which is
 // what makes a crashed run's work survive. `branch` names the branch to check
 // out, and without it the commit is checked out detached.
 export const seed = async (
@@ -212,29 +209,13 @@ export const seed = async (
     git(repo, ['bundle', 'create', '--quiet', bundle, ref]);
     const identity = ['user.name', 'user.email']
       .map((key) => [key, tryGit(repo, ['config', '--get', key])] as const)
-      .filter((pair): pair is [string, string] => pair[1] !== undefined)
-      .map(([key, value]) => `git config ${key} ${quote(value)}`);
-    const checkout =
-      branch === undefined
-        ? 'git checkout -q --detach FETCH_HEAD'
-        : `git checkout -q -B ${branch} FETCH_HEAD`;
+      .filter((pair): pair is [string, string] => pair[1] !== undefined);
     const input = openSync(bundle, 'r');
     try {
       succeed(
-        await sandbox.exec(
-          [
-            // An interrupted seed left files that are not a repository.
-            'find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
-            'cat > /tmp/seed.bundle',
-            'git init -q .',
-            `git fetch -q /tmp/seed.bundle ${ref}`,
-            checkout,
-            ...identity,
-            'rm -f /tmp/seed.bundle',
-            `touch ${SEEDED}`,
-          ].join(' && '),
-          { stdin: input }
-        ),
+        await sandbox.exec(seedScript({ ref, branch, identity }), {
+          stdin: input,
+        }),
         'Seeding'
       );
     } finally {
@@ -276,14 +257,14 @@ export const openReviewSandbox = async (opts: {
 
 export type Collected = {
   oid: string;
-  // `git status --porcelain -z` of the workspace, empty when it is clean.
+  // `git status --porcelain -z` of the sandbox's copy, empty when it is clean.
   dirty: string;
 };
 
 // The end of a round. Everything the host will ever learn about the agent's
 // work leaves the sandbox here: a commit id, a status listing, and a pack
 // that git checks object by object before the run's branch moves to it. The
-// workspace itself is never read.
+// sandbox's copy itself is never read.
 export const collect = async (opts: {
   sandbox: Sandbox;
   repo: string;

@@ -10,7 +10,7 @@ import { CodingTools } from '@earendil-works/pi-durable/tools';
 import type { RemoteExecutionEnv } from '@earendil-works/pi-env';
 import type { AgentOutcome } from './driver.ts';
 import type { AgentRequest, FreshAgentInput, ModelCall } from './ledger.ts';
-import { WORKSPACE } from './sandbox.ts';
+import { COPY_PATH } from './box-scripts.ts';
 
 export const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash-0731';
 const MAX_TURNS = 40;
@@ -105,7 +105,7 @@ export const openAgent = async (opts: {
   const root = await harness.root(ctx, {
     agent: {
       model: { provider: 'openrouter', modelId: opts.model },
-      cwd: WORKSPACE,
+      cwd: COPY_PATH,
       maxTurns: MAX_TURNS,
     },
   });
