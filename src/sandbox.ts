@@ -366,7 +366,7 @@ const answer = async (sandbox: Sandbox, result: ExecResult, what: string) => {
     );
   }
   throw new CollectRefused(
-    `${what} failed in the sandbox: ${firstLine(result.stderr)}. Check that .git in the sandbox's copy is intact.`
+    `The work could not be collected from the sandbox. ${what} failed there: ${firstLine(result.stderr)}. Check that .git in the sandbox's copy is intact.`
   );
 };
 
