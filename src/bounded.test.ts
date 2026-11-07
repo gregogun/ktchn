@@ -56,11 +56,31 @@ describe('runBounded', () => {
       ...node('setTimeout(() => {}, 60000)'),
       maxBytes: 1000,
       timeoutMs: 300,
-      onKill: () => killed++,
+      onKill: async () => {
+        killed++;
+      },
     });
     expect(r.limit).toBe('timeout');
     expect(r.exitCode).toBe(TIMEOUT_EXIT);
     expect(killed).toBe(1);
+  });
+
+  test('does not answer until the cleanup after a kill has finished', async () => {
+    let cleaned = false;
+    const r = await runBounded({
+      ...node('setTimeout(() => {}, 60000)'),
+      maxBytes: 1000,
+      timeoutMs: 200,
+      onKill: () =>
+        new Promise<void>((done) => {
+          setTimeout(() => {
+            cleaned = true;
+            done();
+          }, 300);
+        }),
+    });
+    expect(r.limit).toBe('timeout');
+    expect(cleaned).toBe(true);
   });
 
   test('stops writing a file at the cap when stdout goes to a file', async () => {

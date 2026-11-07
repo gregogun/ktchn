@@ -269,12 +269,14 @@ export const openSandbox = async (opts: {
         // Killing the docker client leaves its command running in the
         // container, so everything but the container's init is killed too.
         onKill: () =>
-          execFile(
-            'docker',
-            ['exec', name, 'sh', '-c', 'kill -s KILL -- -1'],
-            { timeout: 10_000 },
-            () => {}
-          ),
+          new Promise<void>((done) => {
+            execFile(
+              'docker',
+              ['exec', name, 'sh', '-c', 'kill -s KILL -- -1'],
+              { timeout: 10_000 },
+              () => done()
+            );
+          }),
       }),
     close: async () => {
       connection?.close();

@@ -27,8 +27,9 @@ export type BoundedRun = {
   // Most bytes kept from each stream, or written to `stdoutFile`.
   maxBytes: number;
   timeoutMs: number;
-  // Runs after the process is killed, to stop whatever it left behind.
-  onKill?: () => void;
+  // Runs after the process is killed, to stop whatever it left behind. The
+  // result waits for it, so nothing it kills is a later command.
+  onKill?: () => Promise<void>;
 };
 
 // Runs a process that may print without end or never exit. Output past
@@ -44,6 +45,7 @@ export const runBounded = (run: BoundedRun): Promise<ExecResult> =>
     const err: Buffer[] = [];
     let limit: Limit | undefined;
     let done = false;
+    let cleanup: Promise<void> = Promise.resolve();
     const sink =
       stdoutFile === undefined ? undefined : createWriteStream(stdoutFile);
 
@@ -51,7 +53,7 @@ export const runBounded = (run: BoundedRun): Promise<ExecResult> =>
       if (limit !== undefined) return;
       limit = which;
       child.kill('SIGKILL');
-      run.onKill?.();
+      cleanup = run.onKill?.() ?? cleanup;
       setTimeout(() => finish(null), SETTLE_MS).unref();
     };
     const timer = setTimeout(() => trip('timeout'), run.timeoutMs);
@@ -102,7 +104,8 @@ export const runBounded = (run: BoundedRun): Promise<ExecResult> =>
         stderr: Buffer.concat(err).toString('utf8'),
         ...(limit === undefined ? {} : { limit }),
       });
-      if (sink === undefined) resolve(result());
-      else sink.end(() => resolve(result()));
+      const settle = () => cleanup.then(() => resolve(result()));
+      if (sink === undefined) void settle();
+      else sink.end(() => void settle());
     };
   });
