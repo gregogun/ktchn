@@ -1,12 +1,7 @@
 import type { ReviewOutcome } from './driver.ts';
 import { hostFindings } from './host-review.ts';
 import type { CheckResult } from './ledger.ts';
-import {
-  CollectRefused,
-  EXEC_TIMEOUT_MS,
-  openReviewSandbox,
-  type Sandbox,
-} from './sandbox.ts';
+import { EXEC_TIMEOUT_MS, openReviewSandbox, type Sandbox } from './sandbox.ts';
 
 const OUTPUT_TAIL = 4000;
 
@@ -59,18 +54,6 @@ export const runChecks = async (
   return reviewOutcome(results, oid);
 };
 
-// A sandbox the host could not collect from is a finding for the agent, not
-// a crash of the run.
-export const unreadable = (error: unknown) =>
-  error instanceof CollectRefused
-    ? error.message
-    : `The work could not be collected from the sandbox: ${String(
-        (error as { stderr?: string }).stderr ?? error
-      )
-        .trim()
-        .split('\n')[0]
-        ?.slice(0, 300)}. Check that .git in the sandbox's copy is intact.`;
-
 // Review of a finished round. The host looks at the commit first; only a
 // commit that passes that is checked, in a sandbox built from the commit alone.
 // `oid` and `base` are fixed by the caller, so the branch moving mid-review
@@ -86,12 +69,7 @@ export const reviewRun = async (opts: {
   checks: readonly string[];
   allowPaths: readonly string[];
 }): Promise<ReviewOutcome> => {
-  let findings: string[];
-  try {
-    findings = hostFindings(opts);
-  } catch (error) {
-    findings = [unreadable(error)];
-  }
+  const findings = hostFindings(opts);
   if (findings.length > 0) {
     return {
       event: { type: 'ReviewFailed', findings: findings.join('\n\n') },

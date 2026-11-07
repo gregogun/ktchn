@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { reviewOutcome, unreadable } from './review.ts';
+import { reviewOutcome } from './review.ts';
 
 describe('reviewOutcome', () => {
   test('passes when every check exits 0', () => {
@@ -32,15 +32,5 @@ describe('reviewOutcome', () => {
 
   test('a run with no checks passes', () => {
     expect(reviewOutcome([], 'abc123').event.type).toBe('ReviewPassed');
-  });
-});
-
-describe('unreadable', () => {
-  test('names the first line of what git said', () => {
-    expect(
-      unreadable({ stderr: 'fatal: not a git repository\nsecond line\n' })
-    ).toMatch(
-      /^The work could not be collected from the sandbox: fatal: not a git repository\./
-    );
   });
 });

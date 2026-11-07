@@ -305,7 +305,7 @@ export const openSandbox = async (opts: {
   };
 };
 
-const succeed = (result: ExecResult, what: string) => {
+const stopped = (result: ExecResult, what: string) => {
   if (result.limit === 'timeout') {
     throw new CollectRefused(
       `${what} was stopped in the sandbox for taking too long.`
@@ -316,12 +316,36 @@ const succeed = (result: ExecResult, what: string) => {
       `${what} was stopped in the sandbox for printing more than the limit.`
     );
   }
+};
+
+const firstLine = (text: string) =>
+  text.trim().split('\n')[0]?.slice(0, 300) ?? '';
+
+const succeed = (result: ExecResult, what: string) => {
+  stopped(result, what);
   if (result.exitCode !== 0) {
     throw new Error(
       `${what} failed in the sandbox: ${result.stderr.trim().slice(0, 300)}`
     );
   }
   return result.stdout.trim();
+};
+
+// What the agent left in its copy decides what collect's git says, so a git
+// failure there is a finding for the agent. A sandbox that cannot run `true`
+// either is docker failing, which is not the agent's to repair.
+const answer = async (sandbox: Sandbox, result: ExecResult, what: string) => {
+  stopped(result, what);
+  if (result.exitCode === 0) return result.stdout.trim();
+  const alive = await sandbox.exec('true', { timeoutMs: QUICK_MS });
+  if (alive.exitCode !== 0) {
+    throw new Error(
+      `${what} failed and the sandbox does not answer: ${firstLine(result.stderr)}`
+    );
+  }
+  throw new CollectRefused(
+    `${what} failed in the sandbox: ${firstLine(result.stderr)}. Check that .git in the sandbox's copy is intact.`
+  );
 };
 
 // Puts one commit and its history into the sandbox's copy, as a bundle
@@ -417,14 +441,15 @@ export const collect = async (opts: {
   const { sandbox, repo, branch, base } = opts;
   const ref = `refs/heads/${branch}`;
   const tip = git(repo, ['rev-parse', '--verify', `${ref}^{commit}`]);
-  const oid = succeed(
+  const oid = await answer(
+    sandbox,
     await sandbox.exec(`${SAFE_GIT} rev-parse --verify ${ref}^{commit}`, {
       timeoutMs: QUICK_MS,
     }),
     `Reading ${ref}`
   );
   if (!OID.test(oid)) {
-    throw new Error(
+    throw new CollectRefused(
       `The sandbox answered ${oid.slice(0, 80)} for ${ref}, which is not a commit id`
     );
   }
@@ -432,7 +457,7 @@ export const collect = async (opts: {
     `${SAFE_GIT} status --porcelain -z --untracked-files=all --ignore-submodules=all`,
     { timeoutMs: QUICK_MS }
   );
-  succeed(status, 'Reading the status');
+  await answer(sandbox, status, 'Reading the status');
   if (oid !== tip) {
     const scratch = mkdtempSync(join(tmpdir(), 'ktchn-pack-'));
     try {
@@ -449,8 +474,19 @@ export const collect = async (opts: {
       if (sent.exitCode !== 0 && sent.limit === undefined) {
         sent = await pack('');
       }
-      succeed(sent, 'Packing');
-      importPack(file, repo, oid, { maxBytes: MAX_PACK_BYTES });
+      await answer(sandbox, sent, 'Packing');
+      try {
+        importPack(file, repo, oid, { maxBytes: MAX_PACK_BYTES });
+      } catch (error) {
+        // Git exiting with a status read the pack and refused it. Anything
+        // else (git missing, killed) is the host's own failure.
+        if (typeof (error as { status?: unknown }).status !== 'number') {
+          throw error;
+        }
+        throw new CollectRefused(
+          `The pack the sandbox sent was refused by git: ${firstLine(String((error as { stderr?: unknown }).stderr))}. Check that .git in the sandbox's copy is intact.`
+        );
+      }
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }

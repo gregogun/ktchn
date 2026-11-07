@@ -75,6 +75,7 @@ const checkOid = (id: string) => {
 };
 
 // Whether `ancestor` is reachable from `descendant`, both already in `repo`.
+// Git exits 1 for "no"; any other failure is not an answer and is thrown.
 export const isAncestor = (
   repo: string,
   ancestor: string,
@@ -85,8 +86,9 @@ export const isAncestor = (
   try {
     git(repo, ['merge-base', '--is-ancestor', ancestor, descendant]);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as { status?: unknown }).status === 1) return false;
+    throw error;
   }
 };
 

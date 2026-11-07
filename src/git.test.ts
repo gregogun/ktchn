@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { copyCommit, git, importPack, tryGit } from './git.ts';
+import { copyCommit, git, importPack, isAncestor, tryGit } from './git.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -124,5 +124,18 @@ describe('importPack', () => {
       input: `${oid}\n^${oid}~1\n`,
     });
     expect(() => importPack(pack, empty, oid)).toThrow();
+  });
+});
+
+describe('isAncestor', () => {
+  test('answers whether one commit is reachable from another', () => {
+    const { from, base, oid } = setup();
+    expect(isAncestor(from, base, oid)).toBe(true);
+    expect(isAncestor(from, oid, base)).toBe(false);
+  });
+
+  test('throws when git cannot answer, rather than saying no', () => {
+    const { to, base, oid } = setup();
+    expect(() => isAncestor(to, base, oid)).toThrow();
   });
 });

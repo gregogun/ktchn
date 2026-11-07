@@ -11,6 +11,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { runDir } from './clone.ts';
 import type { Job } from './ledger.ts';
 import { makeJob } from './job.ts';
+import { CollectRefused } from './sandbox.ts';
 import { buildShell, type SandboxPort } from './shell.ts';
 import { git } from './test-git.ts';
 import { fakeSandbox } from './test-sandbox.ts';
@@ -171,7 +172,7 @@ describe('buildShell', () => {
     const w = world({ network: false });
     const ports = recorder([]);
     ports.collect = async () => {
-      throw new Error('stopped');
+      throw new CollectRefused('Packing was stopped in the sandbox.');
     };
     const { shell } = buildShell({
       ...w,
@@ -184,6 +185,30 @@ describe('buildShell', () => {
       sandboxes: ports,
     });
     const outcome = await shell.runReview();
-    expect(outcome.event.type).toBe('ReviewFailed');
+    expect(outcome.event).toEqual({
+      type: 'ReviewFailed',
+      findings: 'Packing was stopped in the sandbox.',
+    });
+  });
+
+  test('any other collect failure crashes the run, so it can resume', async () => {
+    const w = world({ network: false });
+    const events: string[] = [];
+    const ports = recorder(events);
+    ports.collect = async () => {
+      throw new Error('Cannot connect to the Docker daemon');
+    };
+    const { shell } = buildShell({
+      ...w,
+      image: 'img',
+      openAgent: async () => ({
+        run: async () => ({}) as never,
+        close: async () => {},
+      }),
+      report: () => {},
+      sandboxes: ports,
+    });
+    await expect(shell.runReview()).rejects.toThrow(/Docker daemon/);
+    expect(events).not.toContain('review');
   });
 });

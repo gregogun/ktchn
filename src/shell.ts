@@ -1,9 +1,10 @@
 import { ensureClone, handOff, removeRun } from './clone.ts';
 import type { AgentOutcome, RunShell } from './driver.ts';
 import type { AgentRequest, Job } from './ledger.ts';
-import { reviewRun, unreadable } from './review.ts';
+import { reviewRun } from './review.ts';
 import {
   collect,
+  CollectRefused,
   openSandbox,
   removeSandboxes,
   sandboxName,
@@ -125,8 +126,9 @@ export const buildShell = (opts: {
           base: opts.base,
         });
       } catch (error) {
+        if (!(error instanceof CollectRefused)) throw error;
         return {
-          event: { type: 'ReviewFailed', findings: unreadable(error) },
+          event: { type: 'ReviewFailed', findings: error.message },
           results: [],
         };
       } finally {

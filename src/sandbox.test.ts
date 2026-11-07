@@ -87,7 +87,8 @@ const box = (
     if (special !== undefined) return special;
     if (command.includes('rev-parse')) return { stdout: `${answer}\n` };
     if (command.includes('status')) return { stdout: '?? junk\0' };
-    return { file: w.incremental };
+    if (command.includes('pack-objects')) return { file: w.incremental };
+    return {};
   });
 
 describe('collect', () => {
@@ -201,6 +202,57 @@ describe('collect', () => {
       expect(w.tip()).toBe(w.base);
     }
   );
+
+  test('a copy whose git fails is refused with a finding', async () => {
+    const w = world();
+    const { sandbox } = box(w, (command) =>
+      command.includes('rev-parse')
+        ? { exitCode: 128, stderr: 'fatal: not a git repository\n' }
+        : undefined
+    );
+
+    const refused = collect({
+      sandbox,
+      repo: w.repo,
+      branch: 'ktchn/r1',
+      base: w.base,
+    });
+
+    await expect(refused).rejects.toBeInstanceOf(CollectRefused);
+    await expect(refused).rejects.toThrow(/not a git repository/);
+  });
+
+  test('a sandbox that does not answer at all is not a finding', async () => {
+    const w = world();
+    const { sandbox } = box(w, () => ({
+      exitCode: 1,
+      stderr: 'Cannot connect to the Docker daemon\n',
+    }));
+
+    const failed = collect({
+      sandbox,
+      repo: w.repo,
+      branch: 'ktchn/r1',
+      base: w.base,
+    });
+
+    await expect(failed).rejects.toThrow(/Docker daemon/);
+    await expect(failed).rejects.not.toBeInstanceOf(CollectRefused);
+  });
+
+  test('a pack git will not take is refused with a finding', async () => {
+    const w = world();
+    const { sandbox } = box(w, (command) =>
+      command.includes('pack-objects')
+        ? { file: Buffer.from('PACK\0\0\0\x02\0\0\0\x01\xff\xff') }
+        : undefined
+    );
+
+    await expect(
+      collect({ sandbox, repo: w.repo, branch: 'ktchn/r1', base: w.base })
+    ).rejects.toBeInstanceOf(CollectRefused);
+    expect(w.tip()).toBe(w.base);
+  });
 
   test('caps the pack the sandbox may send, and does not retry a capped one', async () => {
     const w = world();
