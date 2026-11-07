@@ -259,7 +259,7 @@ describe('removing runs', () => {
     ledger.appendEvent('busy', 0, { type: 'OwnerCancelled' });
     ledger.acquireLease('busy', process.ppid);
     const sweep = sweepFinishedRuns(home, ledger, noContainers);
-    expect(sweep.skipped).toEqual(['busy']);
+    expect(sweep.skipped.map((s) => s.runId)).toEqual(['busy']);
     expect(existsSync(runDir(home, 'busy'))).toBe(true);
     expect(ledger.acquireLease('busy')).toEqual({
       held: false,
@@ -317,6 +317,31 @@ describe('sweepOrphanVolumes', () => {
     expect(removed).toEqual([]);
   });
 
+  test('reports a volume with no home label, and does not remove it', () => {
+    const { home } = setup();
+    const removed: string[] = [];
+    const sweep = sweepOrphanVolumes(
+      home,
+      openLedger(':memory:'),
+      volumes('', 'old'),
+      (id) => removed.push(id)
+    );
+    expect(removed).toEqual([]);
+    expect(sweep.removed).toEqual([]);
+    expect(sweep.skipped).toEqual([
+      { runId: 'old', reason: expect.stringContaining('ktchn.home') },
+    ]);
+  });
+
+  test('fails with a clear message when docker will not list volumes', () => {
+    const { home } = setup();
+    expect(() =>
+      sweepOrphanVolumes(home, openLedger(':memory:'), () => {
+        throw new Error('Cannot connect to the Docker daemon');
+      })
+    ).toThrow(/is docker running\? .*Cannot connect/);
+  });
+
   test('leaves a volume whose run another process holds', () => {
     const { home } = setup();
     const ledger = openLedger(':memory:');
@@ -328,7 +353,7 @@ describe('sweepOrphanVolumes', () => {
       volumes(home, 'busy'),
       (id) => removed.push(id)
     );
-    expect(sweep.skipped).toEqual(['busy']);
+    expect(sweep.skipped.map((s) => s.runId)).toEqual(['busy']);
     expect(removed).toEqual([]);
   });
 

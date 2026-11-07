@@ -103,10 +103,12 @@ export const handOff = (opts: {
 export const removeRun = (home: string, runId: string) =>
   rmSync(runDir(home, runId), { recursive: true, force: true });
 
+const HELD = 'another process is carrying it out';
+
 export type Sweep = {
   removed: string[];
   // Runs another process is carrying out, left for it.
-  skipped: string[];
+  skipped: { runId: string; reason: string }[];
   failed: { runId: string; error: string }[];
 };
 
@@ -130,7 +132,7 @@ export const sweepFinishedRuns = (
     try {
       if (!isTerminal(ledger.replay(runId).state)) continue;
       if (!ledger.acquireLease(runId).held) {
-        sweep.skipped.push(runId);
+        sweep.skipped.push({ runId, reason: HELD });
         continue;
       }
       try {
@@ -151,7 +153,8 @@ export const sweepFinishedRuns = (
 // no directory is a leftover (only this home's volumes count, since homes
 // share one docker): a crash or a failed start, or a run swept
 // without its volume. The listing is by label, so runs this ledger never
-// heard of are found too. A run another process holds is left for it.
+// heard of are found too. A volume made before volumes carried a home label
+// is reported and left, since it cannot be told from another home's. A run another process holds is left for it.
 export const sweepOrphanVolumes = (
   home: string,
   ledger: Ledger,
@@ -161,13 +164,33 @@ export const sweepOrphanVolumes = (
 ): Sweep => {
   const sweep: Sweep = { removed: [], skipped: [], failed: [] };
   const seen = new Set<string>();
-  for (const { runId, home: owner } of volumes()) {
-    if (owner !== home || seen.has(runId) || runId === '') continue;
+  let listed;
+  try {
+    listed = volumes();
+  } catch (error) {
+    throw new Error(
+      `Cannot list the sandbox volumes, is docker running? ${String(error).slice(0, 300)}`,
+      { cause: error }
+    );
+  }
+  for (const { runId, home: owner } of listed) {
+    if (seen.has(runId) || runId === '') continue;
+    if (owner === '') {
+      seen.add(runId);
+      if (existsSync(runDir(home, runId))) continue;
+      sweep.skipped.push({
+        runId,
+        reason:
+          "its volume has no ktchn.home label, so it cannot be told from another home's; remove it by hand if it is yours",
+      });
+      continue;
+    }
+    if (owner !== home) continue;
     seen.add(runId);
     if (existsSync(runDir(home, runId))) continue;
     try {
       if (!ledger.acquireLease(runId).held) {
-        sweep.skipped.push(runId);
+        sweep.skipped.push({ runId, reason: HELD });
         continue;
       }
       try {

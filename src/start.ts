@@ -45,7 +45,17 @@ const swept = sweepFinishedRuns(home, ledger);
 for (const { runId: id, error } of swept.failed) {
   console.error(`could not clear the leftovers of run ${id}: ${error}`);
 }
-const orphans = sweepOrphanVolumes(home, ledger);
+let orphans;
+try {
+  orphans = sweepOrphanVolumes(home, ledger);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  ledger.close();
+  process.exit(1);
+}
+for (const { runId: id, reason } of orphans.skipped) {
+  console.error(`left the volume of run ${id}: ${reason}`);
+}
 for (const { runId: id, error } of orphans.failed) {
   console.error(`could not remove the volume of run ${id}: ${error}`);
 }
