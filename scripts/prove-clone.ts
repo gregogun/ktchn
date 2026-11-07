@@ -14,15 +14,16 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MODEL } from '../src/agent.ts';
-import { runDir, sweepFinishedRuns } from '../src/clone.ts';
+import { runDir, sweepFinishedRuns, sweepOrphanVolumes } from '../src/clone.ts';
 import { driveRun, type AgentOutcome } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
+import { seedScript } from '../src/box-scripts.ts';
 import { openLedger } from '../src/ledger.ts';
 import { removeSandboxes, type Sandbox } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 
-const image = process.env.KTCHN_IMAGE ?? 'sandcastle-test:latest';
+const image = process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
 
 // A logging git first on PATH. Every git the host runs in this process, and
 // in the children it starts, is recorded with its directory and arguments.
@@ -85,7 +86,11 @@ const runContainers = (runId: string) =>
 
 const world = (
   name: string,
-  opts: { checks?: string[]; allowPaths?: string[] } = {}
+  opts: {
+    checks?: string[];
+    allowPaths?: string[];
+    network?: boolean;
+  } = {}
 ) => {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-home-')));
   const repo = makeTempRepo();
@@ -94,7 +99,7 @@ const world = (
     text: name,
     checks: opts.checks ?? [],
     allowPaths: opts.allowPaths ?? [],
-    policy: { network: false },
+    policy: { network: opts.network ?? false },
     model: DEFAULT_MODEL,
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
@@ -452,6 +457,220 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   await new Promise((resolve) => first.once('exit', resolve));
   rmSync(home, { recursive: true, force: true });
   rmSync(repo, { recursive: true, force: true });
+}
+
+// A benign fetch of a public page that succeeds only with a network.
+const FETCH =
+  'node -e "fetch(\'https://example.com\',{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0),()=>process.exit(1))"';
+const inspect = (name: string, format: string) =>
+  execFileSync('docker', ['inspect', '--format', format, name], {
+    encoding: 'utf8',
+  }).trim();
+
+// (h)
+{
+  header('(h) a command printing without end is cut off, and the round fails');
+  const w = world('(h)');
+  await w.drive([
+    async (s) => {
+      const r = await s.exec('yes | head -c 6000000');
+      console.log(
+        `  agent$ yes | head -c 6000000 -> limit ${String(r.limit)}, kept ${r.stdout.length} bytes`
+      );
+      assert.equal(r.limit, 'output');
+      assert(r.stdout.length <= 1024 * 1024, 'output is capped');
+      await sh(s, 'echo ok > after.txt');
+      return finished;
+    },
+    giveUp,
+  ]);
+  assert.equal(runContainers(w.runId).length, 0);
+  w.cleanup();
+}
+
+// (i)
+{
+  header('(i) a command that never returns is killed at its timeout');
+  const w = world('(i)');
+  await w.drive([
+    async (s) => {
+      const started = Date.now();
+      const r = await s.exec('sleep 300', { timeoutMs: 2000 });
+      const took = Date.now() - started;
+      console.log(
+        `  agent$ sleep 300 (2s timeout) -> limit ${String(r.limit)} after ${took} ms`
+      );
+      assert.equal(r.limit, 'timeout');
+      assert(took < 20_000, 'it did not wait for the sleep');
+      const left = await s.exec(
+        "for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline; echo; done | grep -c 'slee[p] 300'; true"
+      );
+      console.log(
+        `  sleeping processes left in the container: ${left.stdout.trim()}`
+      );
+      assert.equal(left.stdout.trim(), '0');
+      await sh(s, 'echo alive');
+      return finished;
+    },
+    giveUp,
+  ]);
+  w.cleanup();
+}
+
+// (j)
+{
+  header('(j) a commit that is not a descendant of the base is refused');
+  const w = world('(j)');
+  await w.drive([
+    async (s) => {
+      await sh(
+        s,
+        `git update-ref refs/heads/${w.job.branch} $(git commit-tree -m unrelated $(git mktree < /dev/null))`
+      );
+      return finished;
+    },
+    giveUp,
+  ]);
+  const findings = reviewFailed(w.ledger, w.runId);
+  console.log('ReviewFailed findings:\n' + findings);
+  assert.match(findings, /descend|ancestor|base/i);
+  assert.equal(git(w.clone, 'rev-parse', `refs/heads/${w.job.branch}`), w.base);
+  assert.equal(
+    git(w.repo, 'for-each-ref', '--format=%(refname)'),
+    'refs/heads/main'
+  );
+  w.cleanup();
+}
+
+// (k)
+{
+  header('(k) the network is off by default, and review never has one');
+  const w = world('(k)', { checks: [`! ${FETCH}`] });
+  await w.drive([
+    async (s) => {
+      const name = `ktchn-${w.runId}-r1`;
+      const mode = inspect(name, '{{.HostConfig.NetworkMode}}');
+      const caps = inspect(name, '{{.HostConfig.CapDrop}}');
+      const opt = inspect(name, '{{.HostConfig.SecurityOpt}}');
+      const pids = inspect(name, '{{.HostConfig.PidsLimit}}');
+      const mem = inspect(name, '{{.HostConfig.Memory}}');
+      console.log(
+        `  container: network ${mode}, cap-drop ${caps}, security-opt ${opt}, pids ${pids}, memory ${mem}`
+      );
+      assert.equal(mode, 'none');
+      assert.match(caps, /ALL/);
+      assert.match(opt, /no-new-privileges/);
+      const r = await sh(s, FETCH);
+      assert.notEqual(r.exitCode, 0, 'the fetch failed with no network');
+      await sh(s, 'echo f > f.txt && git add f.txt && git commit -qm f');
+      return finished;
+    },
+  ]);
+  const passed = eventsOf(w.ledger, w.runId).find(
+    (e) => e.type === 'ReviewPassed'
+  );
+  assert.equal(
+    passed?.type,
+    'ReviewPassed',
+    'the check that expects no network passed'
+  );
+  w.cleanup();
+}
+
+// (l)
+{
+  header(
+    '(l) a job started with the network has it, and review still does not'
+  );
+  const w = world('(l)', { network: true, checks: [`! ${FETCH}`] });
+  await w.drive([
+    async (s) => {
+      const mode = inspect(
+        `ktchn-${w.runId}-r1`,
+        '{{.HostConfig.NetworkMode}}'
+      );
+      console.log(`  container network mode: ${mode}`);
+      assert.notEqual(mode, 'none');
+      const r = await sh(s, FETCH);
+      assert.equal(r.exitCode, 0, 'the fetch worked with the network');
+      await sh(s, 'echo l > l.txt && git add l.txt && git commit -qm l');
+      return finished;
+    },
+  ]);
+  const passed = eventsOf(w.ledger, w.runId).find(
+    (e) => e.type === 'ReviewPassed'
+  );
+  assert.equal(passed?.type, 'ReviewPassed', 'review had no network');
+  w.cleanup();
+}
+
+// (m)
+{
+  header('(m) the seed script refuses to delete outside a ktchn sandbox');
+  // A container from a plain node image: no sentinel file, no mounts and no
+  // network. The script is only ever run inside it.
+  const script = seedScript({
+    ref: 'refs/heads/x',
+    branch: 'x',
+    identity: [['user.name', 'x']],
+  });
+  const wrapper =
+    'mkdir -p /home/agent/copy && cd /home/agent/copy && echo keep > keep.txt && (sh -c "$0" </dev/null; echo "exit=$?"); ls /home/agent/copy';
+  const base = ['run', '--rm', '--network', 'none', '--cap-drop', 'ALL'];
+  const run = (extra: string[]) =>
+    spawnSync(
+      'docker',
+      [...base, ...extra, 'node:22-bookworm-slim', 'sh', '-c', wrapper, script],
+      { encoding: 'utf8' }
+    );
+  const plain = run([]);
+  console.log('  no sentinel:', plain.stdout.trim().replace(/\n/g, ' | '));
+  assert.match(plain.stdout, /exit=97/);
+  assert.match(plain.stdout, /keep\.txt/);
+  // The right directory is not enough, and neither is a wrong directory
+  // with the sentinel.
+  const elsewhere = spawnSync(
+    'docker',
+    [
+      ...base,
+      'ktchn-sandbox:latest',
+      'sh',
+      '-c',
+      'mkdir -p /tmp/other && cd /tmp/other && echo keep > keep.txt && (sh -c "$0" </dev/null; echo "exit=$?"); ls /tmp/other',
+      script,
+    ],
+    { encoding: 'utf8' }
+  );
+  console.log(
+    '  wrong directory:',
+    elsewhere.stdout.trim().replace(/\n/g, ' | ')
+  );
+  assert.match(elsewhere.stdout, /exit=97/);
+  assert.match(elsewhere.stdout, /keep\.txt/);
+}
+
+// (n)
+{
+  header('(n) a volume with no run directory is swept by its label');
+  const home = mkdtempSync(join(tmpdir(), 'ktchn-home-'));
+  const ledger = openLedger(join(home, 'ledger.sqlite'));
+  execFileSync('docker', [
+    'volume',
+    'create',
+    '--label',
+    'ktchn.run=orphanproof',
+    '--label',
+    `ktchn.home=${home}`,
+    'ktchn-orphanproof',
+  ]);
+  const has = () => ktchnLeftovers().volumes.includes('ktchn-orphanproof');
+  assert(has(), 'the orphan exists');
+  const swept = sweepOrphanVolumes(home, ledger);
+  console.log('  swept:', JSON.stringify(swept));
+  assert(swept.removed.includes('orphanproof'));
+  assert(!has(), 'the orphan is gone');
+  ledger.close();
+  rmSync(home, { recursive: true, force: true });
 }
 
 // The invariant. Nothing the host ran git on was ever inside a sandbox.

@@ -33,6 +33,7 @@ const opened = await openSandbox({
   name: 'ktchn-proof-agent-r1',
   image: process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest',
   volume: true,
+  home,
   piEnv: true,
   network: false,
 });
