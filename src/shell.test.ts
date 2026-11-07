@@ -28,7 +28,13 @@ const recorder = (events: string[], network: boolean[] = []) => {
     open: async (opts) => {
       events.push(`open ${opts.name}`);
       network.push(opts.network);
-      return sandbox;
+      return {
+        ...sandbox,
+        name: opts.name,
+        close: async () => {
+          events.push(`close ${opts.name}`);
+        },
+      };
     },
     removeAll: (runId, withVolume) => {
       events.push(`remove ${runId} ${String(withVolume)}`);
@@ -164,8 +170,44 @@ describe('buildShell', () => {
       `open ktchn-${w.runId}-collect`,
       'seed',
       'collect',
+      `close ktchn-${w.runId}-collect`,
       'review',
     ]);
+  });
+
+  test("review after a round closes the agent's session and sandbox and collects in a fresh one", async () => {
+    const w = world({ network: true });
+    const events: string[] = [];
+    const network: boolean[] = [];
+    const { shell } = buildShell({
+      ...w,
+      image: 'img',
+      openAgent: async () => ({
+        run: async () => {
+          events.push('agent');
+          return {} as never;
+        },
+        close: async () => {
+          events.push('agent closed');
+        },
+      }),
+      report: () => {},
+      sandboxes: recorder(events, network),
+    });
+    await shell.runAgent({ input: { kind: 'job' } as never, number: 1 });
+    events.length = 0;
+    await shell.runReview();
+    expect(events).toEqual([
+      'agent closed',
+      `close ktchn-${w.runId}-r1`,
+      `remove ${w.runId} false`,
+      `open ktchn-${w.runId}-collect`,
+      'seed',
+      'collect',
+      `close ktchn-${w.runId}-collect`,
+      'review',
+    ]);
+    expect(network).toEqual([true, false]);
   });
 
   test('a refused collect becomes a failed review, not a crash', async () => {

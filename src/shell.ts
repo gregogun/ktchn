@@ -53,7 +53,8 @@ export const buildShell = (opts: {
   const { job, runId } = opts;
   const sandboxes = opts.sandboxes ?? realSandboxes;
   let clone: string | undefined;
-  let open: { sandbox: Sandbox; round: number } | undefined;
+  // A number is an agent round. Collect has a sandbox of its own.
+  let open: { sandbox: Sandbox; round: number | 'collect' } | undefined;
   let agent: AgentSession | undefined;
   const theClone = () =>
     (clone ??= ensureClone({
@@ -76,8 +77,9 @@ export const buildShell = (opts: {
     }
   };
 
-  const openRound = async (number: number, withAgent: boolean) => {
-    if (open?.round === number && (agent !== undefined || !withAgent)) return;
+  const openRound = async (number: number | 'collect') => {
+    const withAgent = number !== 'collect';
+    if (withAgent && open?.round === number) return;
     await closeRound();
     // A driver that was killed left its containers running on the volume.
     sandboxes.removeAll(runId, false);
@@ -91,7 +93,7 @@ export const buildShell = (opts: {
       volume: true,
       home: opts.home,
       piEnv: withAgent,
-      network: job.policy.network,
+      network: withAgent && job.policy.network,
     });
     open = { sandbox, round: number };
     try {
@@ -109,16 +111,18 @@ export const buildShell = (opts: {
 
   const shell: RunShell = {
     runAgent: async (request) => {
-      await openRound(request.number, true);
+      await openRound(request.number);
       return (agent as AgentSession).run(request);
     },
-    // The round's data leaves the sandbox first, then the sandbox is removed
-    // and its volume kept. Review then judges one commit, resolved once, from
-    // the trusted clone.
+    // The agent's session and sandbox are closed first, so nothing the agent
+    // left running can change the copy while it is read. The round's data
+    // leaves through a collect sandbox over the same volume, which is then
+    // removed and the volume kept. Review judges one commit, resolved once,
+    // from the trusted clone.
     runReview: async () => {
       let collected;
       try {
-        await openRoundForCollect();
+        await openRound('collect');
         collected = await sandboxes.collect({
           sandbox: (open as { sandbox: Sandbox }).sandbox,
           repo: theClone(),
@@ -170,12 +174,5 @@ export const buildShell = (opts: {
     report: opts.report,
   };
 
-  // The agent's sandbox is still open when review follows a round. After a
-  // crash there is none, and a sandbox without the agent is opened over the
-  // same volume.
-  const openRoundForCollect = async () => {
-    if (open !== undefined) return;
-    await openRound(0, false);
-  };
   return { shell, close: closeRound };
 };
