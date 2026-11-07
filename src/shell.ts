@@ -12,6 +12,23 @@ import {
 } from './sandbox.ts';
 import type { RunState } from './run-machine.ts';
 
+// The sandbox operations a run uses, so a test can stand in a recording fake.
+export type SandboxPort = {
+  open: typeof openSandbox;
+  removeAll: typeof removeSandboxes;
+  seed: typeof seed;
+  collect: typeof collect;
+  review: typeof reviewRun;
+};
+
+export const realSandboxes: SandboxPort = {
+  open: openSandbox,
+  removeAll: removeSandboxes,
+  seed,
+  collect,
+  review: reviewRun,
+};
+
 export type AgentSession = {
   run: (request: AgentRequest) => Promise<AgentOutcome>;
   close: () => Promise<void>;
@@ -30,8 +47,10 @@ export const buildShell = (opts: {
   base: string;
   openAgent: (sandbox: Sandbox) => Promise<AgentSession>;
   report: (state: RunState) => void;
+  sandboxes?: SandboxPort;
 }) => {
   const { job, runId } = opts;
+  const sandboxes = opts.sandboxes ?? realSandboxes;
   let clone: string | undefined;
   let open: { sandbox: Sandbox; round: number } | undefined;
   let agent: AgentSession | undefined;
@@ -60,18 +79,22 @@ export const buildShell = (opts: {
     if (open?.round === number && (agent !== undefined || !withAgent)) return;
     await closeRound();
     // A driver that was killed left its containers running on the volume.
-    removeSandboxes(runId, false);
-    const sandbox = await openSandbox({
+    sandboxes.removeAll(runId, false);
+    // The clone comes first: a volume made before it would have nothing that
+    // names it if the clone failed.
+    const source = theClone();
+    const sandbox = await sandboxes.open({
       runId,
       name: withAgent ? sandboxName(runId, number) : `ktchn-${runId}-collect`,
       image: opts.image,
       volume: true,
       piEnv: withAgent,
+      network: job.policy.network,
     });
     open = { sandbox, round: number };
     try {
-      await seed(sandbox, {
-        repo: theClone(),
+      await sandboxes.seed(sandbox, {
+        repo: source,
         ref: `refs/heads/${job.branch}`,
         branch: job.branch,
       });
@@ -94,7 +117,7 @@ export const buildShell = (opts: {
       let collected;
       try {
         await openRoundForCollect();
-        collected = await collect({
+        collected = await sandboxes.collect({
           sandbox: (open as { sandbox: Sandbox }).sandbox,
           repo: theClone(),
           branch: job.branch,
@@ -108,7 +131,7 @@ export const buildShell = (opts: {
       } finally {
         await closeRound();
       }
-      return reviewRun({
+      return sandboxes.review({
         runId,
         repo: theClone(),
         branch: job.branch,
@@ -133,7 +156,7 @@ export const buildShell = (opts: {
       await closeRound();
       // The run is over either way, and the next start sweeps what is left.
       try {
-        removeSandboxes(runId, true);
+        sandboxes.removeAll(runId, true);
         removeRun(opts.home, runId);
       } catch (error) {
         console.error(

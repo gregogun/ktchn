@@ -15,6 +15,7 @@ import {
   removeRun,
   runDir,
   sweepFinishedRuns,
+  sweepOrphanVolumes,
 } from './clone.ts';
 import { openLedger } from './ledger.ts';
 import { copyCommit } from './git.ts';
@@ -279,5 +280,53 @@ describe('removing runs', () => {
     ledger.appendEvent('dead', 0, { type: 'OwnerCancelled' });
     sweepFinishedRuns(home, ledger, noContainers);
     expect(ledger.acquireLease('dead', process.ppid)).toEqual({ held: true });
+  });
+});
+
+describe('sweepOrphanVolumes', () => {
+  const volumes =
+    (...ids: string[]) =>
+    () =>
+      ids.map((runId) => ({ runId }));
+
+  test('removes volumes whose run has no directory, known to the ledger or not', () => {
+    const { owner, home, base } = setup();
+    ensureClone({ home, runId: 'kept', source: owner, base, branch: 'b' });
+    const ledger = openLedger(':memory:');
+    const removed: string[] = [];
+    const sweep = sweepOrphanVolumes(
+      home,
+      ledger,
+      volumes('kept', 'gone', 'gone', 'stranger'),
+      (id) => removed.push(id)
+    );
+    expect(sweep.removed).toEqual(['gone', 'stranger']);
+    expect(removed).toEqual(['gone', 'stranger']);
+  });
+
+  test('leaves a volume whose run another process holds', () => {
+    const { home } = setup();
+    const ledger = openLedger(':memory:');
+    ledger.acquireLease('busy');
+    const removed: string[] = [];
+    const sweep = sweepOrphanVolumes(home, ledger, volumes('busy'), (id) =>
+      removed.push(id)
+    );
+    expect(sweep.skipped).toEqual(['busy']);
+    expect(removed).toEqual([]);
+  });
+
+  test('reports a volume that will not go and carries on', () => {
+    const { home } = setup();
+    const sweep = sweepOrphanVolumes(
+      home,
+      openLedger(':memory:'),
+      volumes('a', 'b'),
+      (id) => {
+        if (id === 'a') throw new Error('busy');
+      }
+    );
+    expect(sweep.failed.map((f) => f.runId)).toEqual(['a']);
+    expect(sweep.removed).toEqual(['b']);
   });
 });

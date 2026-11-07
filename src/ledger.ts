@@ -8,7 +8,12 @@ import {
   type RunState,
 } from './run-machine.ts';
 
+// What a job lets its sandbox do. The agent's sandbox has no network unless
+// the job says so; review's never has one (ADR 0015).
+export type Policy = { network: boolean };
+
 export type Job = {
+  policy: Policy;
   repo: string;
   branch: string;
   text: string;

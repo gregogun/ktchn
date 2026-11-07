@@ -2,7 +2,7 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { sweepFinishedRuns } from './clone.ts';
+import { sweepFinishedRuns, sweepOrphanVolumes } from './clone.ts';
 import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from './agent.ts';
 import { driveRun } from './driver.ts';
 import { makeJob } from './job.ts';
@@ -11,7 +11,7 @@ import { git } from './git.ts';
 import { buildShell } from './shell.ts';
 
 const usage =
-  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>]';
+  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--network]';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -19,6 +19,7 @@ const { positionals, values } = parseArgs({
     check: { type: 'string', multiple: true, default: [] },
     'allow-path': { type: 'string', multiple: true, default: [] },
     model: { type: 'string', default: DEFAULT_MODEL },
+    network: { type: 'boolean', default: false },
   },
 });
 const [repoArg, text] = positionals;
@@ -33,15 +34,20 @@ const { runId, job } = makeJob({
   checks: values.check,
   allowPaths: values['allow-path'],
   model: values.model,
+  policy: { network: values.network },
 });
 
-const image = process.env.KTCHN_IMAGE ?? 'sandcastle-test:latest';
+const image = process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
 const home = process.env.KTCHN_HOME ?? join(homedir(), '.ktchn');
 mkdirSync(join(home, 'sessions'), { recursive: true });
 const ledger = openLedger(join(home, 'ledger.sqlite'));
 const swept = sweepFinishedRuns(home, ledger);
 for (const { runId: id, error } of swept.failed) {
   console.error(`could not clear the leftovers of run ${id}: ${error}`);
+}
+const orphans = sweepOrphanVolumes(home, ledger);
+for (const { runId: id, error } of orphans.failed) {
+  console.error(`could not remove the volume of run ${id}: ${error}`);
 }
 const lease = ledger.acquireLease(runId);
 if (!lease.held) {

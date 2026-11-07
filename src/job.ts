@@ -13,6 +13,7 @@ export const makeJob = (
         spec.checks,
         spec.model,
         spec.allowPaths,
+        spec.policy.network,
       ])
     )
     .digest('hex')

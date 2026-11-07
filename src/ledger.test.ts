@@ -7,6 +7,7 @@ const job: Job = {
   text: 'Add a README',
   checks: ['pnpm test'],
   allowPaths: [],
+  policy: { network: false },
   model: 'anthropic/claude-haiku-4.5',
 };
 

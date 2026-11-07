@@ -28,6 +28,8 @@ export const MAX_OUTPUT_BYTES = 1024 * 1024;
 export const MAX_PACK_BYTES = 256 * 1024 * 1024;
 const QUICK_MS = 60_000;
 const PACK_MS = 5 * 60_000;
+export const PIDS_LIMIT = 512;
+export const MEMORY_LIMIT = '2g';
 
 export type ExecOptions = {
   stdin?: string | number;
@@ -64,6 +66,40 @@ const docker = (args: readonly string[]) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 
+// What every sandbox container is run with. The network is a Policy of the
+// job: `--network none` unless the job allows it (ADR 0015).
+export const containerArgs = (opts: {
+  name: string;
+  runId: string;
+  image: string;
+  network: boolean;
+  mounts: readonly string[];
+}) => [
+  'run',
+  '-d',
+  '--rm',
+  '-u',
+  '1000:1000',
+  '--name',
+  opts.name,
+  '--label',
+  `${LABEL}=${opts.runId}`,
+  '--cap-drop',
+  'ALL',
+  '--security-opt',
+  'no-new-privileges',
+  '--pids-limit',
+  String(PIDS_LIMIT),
+  '--memory',
+  MEMORY_LIMIT,
+  ...(opts.network ? [] : ['--network', 'none']),
+  ...opts.mounts,
+  '--entrypoint',
+  'sleep',
+  opts.image,
+  'infinity',
+];
+
 const piEnvBinDir = () =>
   dirname(
     packagedDaemon({
@@ -71,6 +107,26 @@ const piEnvBinDir = () =>
       arch: process.arch === 'arm64' ? 'arm64' : 'x64',
     })
   );
+
+const volumeExists = (volume: string) =>
+  docker(['volume', 'ls', '-q', '--filter', `name=^${volume}$`]) !== '';
+
+// Every volume ktchn made, by label, whether or not its run is still known.
+export const listVolumes = (): { runId: string; volume: string }[] =>
+  docker([
+    'volume',
+    'ls',
+    '--filter',
+    `label=${LABEL}`,
+    '--format',
+    `{{.Name}} {{.Label "${LABEL}"}}`,
+  ])
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [volume = '', runId = ''] = line.split(' ');
+      return { runId, volume };
+    });
 
 // Removes every container of a run, and with `withVolume` its volume too.
 // A crashed driver leaves its containers behind, so a resume and the sweep of
@@ -95,49 +151,66 @@ export const openSandbox = async (opts: {
   image: string;
   volume: boolean;
   piEnv: boolean;
+  // The job's Policy. A sandbox with no network cannot fetch anything.
+  network: boolean;
 }): Promise<Sandbox> => {
   const { runId, name } = opts;
   if (!NAME.test(name)) throw new Error(`Not a sandbox name: ${name}`);
   const volume = volumeName(runId);
   docker(['rm', '-f', name]);
+  const volumeExisted = opts.volume && volumeExists(volume);
   const mounts: string[] = [];
-  if (opts.volume) {
-    docker(['volume', 'create', '--label', `${LABEL}=${runId}`, volume]);
-    // A new volume belongs to root.
-    docker([
-      'run',
-      '--rm',
-      '-u',
-      'root',
-      '-v',
-      `${volume}:${COPY_PATH}`,
-      '--entrypoint',
-      'chown',
-      opts.image,
-      '1000:1000',
-      COPY_PATH,
-    ]);
-    mounts.push('-v', `${volume}:${COPY_PATH}`);
+  const forgetVolume = () => {
+    try {
+      docker(['volume', 'rm', '-f', volume]);
+    } catch {
+      // Already gone, or the sweep by label finds it.
+    }
+  };
+  let made = false;
+  try {
+    if (opts.volume) {
+      docker(['volume', 'create', '--label', `${LABEL}=${runId}`, volume]);
+      made = true;
+      // A new volume belongs to root.
+      docker([
+        'run',
+        '--rm',
+        '-u',
+        'root',
+        '--cap-drop',
+        'ALL',
+        '--cap-add',
+        'CHOWN',
+        '--network',
+        'none',
+        '-v',
+        `${volume}:${COPY_PATH}`,
+        '--entrypoint',
+        'chown',
+        opts.image,
+        '1000:1000',
+        COPY_PATH,
+      ]);
+      mounts.push('-v', `${volume}:${COPY_PATH}`);
+    }
+    if (opts.piEnv) {
+      mounts.push('-v', `${realpathSync(piEnvBinDir())}:${PI_ENV_DIR}:ro`);
+    }
+    docker(
+      containerArgs({
+        name,
+        runId,
+        image: opts.image,
+        network: opts.network,
+        mounts,
+      })
+    );
+  } catch (error) {
+    // A volume made by this call has no run directory to sweep it with yet.
+    if (made && !volumeExisted) forgetVolume();
+    throw error;
   }
-  if (opts.piEnv) {
-    mounts.push('-v', `${realpathSync(piEnvBinDir())}:${PI_ENV_DIR}:ro`);
-  }
-  docker([
-    'run',
-    '-d',
-    '--rm',
-    '-u',
-    '1000:1000',
-    '--name',
-    name,
-    '--label',
-    `${LABEL}=${runId}`,
-    ...mounts,
-    '--entrypoint',
-    'sleep',
-    opts.image,
-    'infinity',
-  ]);
   const remove = () => {
     try {
       docker(['rm', '-f', name]);
@@ -149,6 +222,7 @@ export const openSandbox = async (opts: {
     docker(['exec', name, 'mkdir', '-p', COPY_PATH]);
   } catch (error) {
     remove();
+    if (made && !volumeExisted) forgetVolume();
     throw error;
   }
 
@@ -270,6 +344,7 @@ export const openReviewSandbox = async (
     image: opts.image,
     volume: false,
     piEnv: false,
+    network: false,
   });
   git(opts.repo, ['update-ref', REVIEW_REF, opts.oid]);
   try {

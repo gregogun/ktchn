@@ -15,6 +15,9 @@ import { importPack } from './git.ts';
 import {
   collect,
   CollectRefused,
+  containerArgs,
+  MEMORY_LIMIT,
+  PIDS_LIMIT,
   MAX_PACK_BYTES,
   openReviewSandbox,
   seed,
@@ -302,10 +305,45 @@ describe('openReviewSandbox', () => {
       expect.objectContaining({
         volume: false,
         piEnv: false,
+        network: false,
         image: 'img',
       }),
     ]);
     expect(readFileSync(join(w.repo, 'HEAD'), 'utf8')).toMatch(/refs/);
     expect(() => git(w.repo, 'rev-parse', 'refs/ktchn/review')).toThrow();
+  });
+});
+
+describe('containerArgs', () => {
+  const args = (network: boolean) =>
+    containerArgs({
+      name: 'n',
+      runId: 'r',
+      image: 'img',
+      network,
+      mounts: ['-v', 'v:/home/agent/copy'],
+    });
+  const pair = (list: string[], flag: string) => list[list.indexOf(flag) + 1];
+
+  test('drops capabilities and limits processes and memory', () => {
+    const list = args(false);
+    expect(pair(list, '--cap-drop')).toBe('ALL');
+    expect(pair(list, '--security-opt')).toBe('no-new-privileges');
+    expect(pair(list, '--pids-limit')).toBe(String(PIDS_LIMIT));
+    expect(pair(list, '--memory')).toBe(MEMORY_LIMIT);
+  });
+
+  test('has no network unless the Policy allows it', () => {
+    expect(pair(args(false), '--network')).toBe('none');
+    expect(args(true)).not.toContain('--network');
+  });
+
+  test('keeps the image and command after every flag', () => {
+    expect(args(false).slice(-4)).toEqual([
+      '--entrypoint',
+      'sleep',
+      'img',
+      'infinity',
+    ]);
   });
 });

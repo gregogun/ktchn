@@ -7,6 +7,7 @@ const spec = {
   checks: ['pnpm test'],
   model: 'm',
   allowPaths: [],
+  policy: { network: false },
 };
 
 describe('makeJob', () => {
@@ -18,6 +19,12 @@ describe('makeJob', () => {
 
   test('allowed paths make a different run', () => {
     expect(makeJob({ ...spec, allowPaths: ['package.json'] }).runId).not.toBe(
+      makeJob(spec).runId
+    );
+  });
+
+  test('allowing the network makes a different run', () => {
+    expect(makeJob({ ...spec, policy: { network: true } }).runId).not.toBe(
       makeJob(spec).runId
     );
   });

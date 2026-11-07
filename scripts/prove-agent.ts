@@ -31,9 +31,10 @@ const jobText = [
 const opened = await openSandbox({
   runId: 'proof-agent',
   name: 'ktchn-proof-agent-r1',
-  image: process.env.KTCHN_IMAGE ?? 'sandcastle-test:latest',
+  image: process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest',
   volume: true,
   piEnv: true,
+  network: false,
 });
 await seed(opened, {
   repo: clone,

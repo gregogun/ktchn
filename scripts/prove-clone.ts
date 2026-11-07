@@ -94,6 +94,7 @@ const world = (
     text: name,
     checks: opts.checks ?? [],
     allowPaths: opts.allowPaths ?? [],
+    policy: { network: false },
     model: DEFAULT_MODEL,
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
@@ -429,6 +430,7 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
     text,
     checks: [],
     allowPaths: [],
+    policy: { network: false },
     model: DEFAULT_MODEL,
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
