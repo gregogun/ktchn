@@ -54,7 +54,9 @@ export const ensureClone = (opts: {
     // The agent commits as the owner would. Nothing else of the owner's
     // configuration comes along.
     for (const key of ['user.name', 'user.email']) {
-      const value = tryGit(opts.source, ['config', '--get', key]);
+      const value = tryGit(opts.source, ['config', '--get', key], {
+        scope: 'owner',
+      });
       if (value !== undefined) git(partial, ['config', key, value]);
     }
   } catch (error) {
@@ -79,7 +81,9 @@ export const handOff = (opts: {
   base: string;
 }) => {
   const ref = `refs/heads/${opts.branch}`;
-  const current = tryGit(opts.owner, ['rev-parse', '--verify', '-q', ref]);
+  const current = tryGit(opts.owner, ['rev-parse', '--verify', '-q', ref], {
+    scope: 'owner',
+  });
   if (current === opts.oid) return;
   if (current !== undefined) {
     throw new Error(
@@ -91,8 +95,9 @@ export const handOff = (opts: {
     to: opts.owner,
     oid: opts.oid,
     excluding: opts.base,
+    toScope: 'owner',
   });
-  git(opts.owner, ['update-ref', ref, opts.oid, ZERO_OID]);
+  git(opts.owner, ['update-ref', ref, opts.oid, ZERO_OID], { scope: 'owner' });
 };
 
 export const removeRun = (home: string, runId: string) =>

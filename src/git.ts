@@ -6,8 +6,26 @@ import { join } from 'node:path';
 // The host runs git only on repositories ktchn alone writes: the owner's
 // project, a run's clone, and scratch directories (ADR 0015). Variables a
 // hook or a parent git left in the environment must not steer it.
-const hostEnv = (): Record<string, string> => {
-  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' };
+//
+// A run's clone and scratch directories are `trusted`: git there reads no
+// system or user configuration, so nothing but ktchn's own flags and the
+// repository's config decides what it does. The owner's project is `owner`
+// and keeps the owner's own system and user configuration. ktchn needs the
+// owner's identity from it for the agent's commits, and the project is the
+// owner's own code on the owner's own machine, written only by ktchn
+// (ADR 0015). Inherited `GIT_*` variables are dropped for both.
+export type Scope = 'trusted' | 'owner';
+
+const hostEnv = (scope: Scope): Record<string, string> => {
+  const env: Record<string, string> = {
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ATTR_NOSYSTEM: '1',
+    GIT_NO_LAZY_FETCH: '1',
+  };
+  if (scope === 'trusted') {
+    env.GIT_CONFIG_NOSYSTEM = '1';
+    env.GIT_CONFIG_GLOBAL = '/dev/null';
+  }
   for (const [name, value] of Object.entries(process.env)) {
     if (value !== undefined && !name.startsWith('GIT_')) env[name] = value;
   }
@@ -17,12 +35,12 @@ const hostEnv = (): Record<string, string> => {
 export const git = (
   cwd: string,
   args: readonly string[],
-  opts: { stdin?: string | number; stdout?: number } = {}
+  opts: { stdin?: string | number; stdout?: number; scope?: Scope } = {}
 ): string =>
   (
     execFileSync('git', [...args], {
       cwd,
-      env: hostEnv(),
+      env: hostEnv(opts.scope ?? 'trusted'),
       input: typeof opts.stdin === 'string' ? opts.stdin : undefined,
       encoding: 'utf8',
       maxBuffer: 256 * 1024 * 1024,
@@ -40,10 +58,11 @@ export const git = (
 
 export const tryGit = (
   cwd: string,
-  args: readonly string[]
+  args: readonly string[],
+  opts: { scope?: Scope } = {}
 ): string | undefined => {
   try {
-    return git(cwd, args);
+    return git(cwd, args, opts);
   } catch {
     return undefined;
   }
@@ -79,7 +98,7 @@ export const importPack = (
   pack: string,
   repo: string,
   oid: string,
-  opts: { maxBytes?: number } = {}
+  opts: { maxBytes?: number; scope?: Scope } = {}
 ) => {
   checkOid(oid);
   const input = openSync(pack, 'r');
@@ -94,17 +113,21 @@ export const importPack = (
           ? []
           : [`--max-input-size=${opts.maxBytes}`]),
       ],
-      { stdin: input }
+      { stdin: input, scope: opts.scope }
     );
   } finally {
     closeSync(input);
   }
-  git(repo, ['rev-list', '--objects', '--quiet', oid, '--not', '--all']);
+  git(repo, ['rev-list', '--objects', '--quiet', oid, '--not', '--all'], {
+    scope: opts.scope,
+  });
 };
 
 // Brings one commit and what it needs from one repository into another as a
 // pack. `excluding` is a commit the destination already has, to send less.
 export const copyCommit = (opts: {
+  // How git treats `to`, which is the owner's project in a handoff.
+  toScope?: Scope;
   from: string;
   to: string;
   oid: string;
@@ -124,7 +147,7 @@ export const copyCommit = (opts: {
     } finally {
       closeSync(out);
     }
-    importPack(file, to, oid);
+    importPack(file, to, oid, { scope: opts.toScope });
   };
   try {
     try {
