@@ -12,6 +12,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { SEEDED } from './box-scripts.ts';
 import { importPack } from './git.ts';
 import {
+  chownArgs,
   collect,
   CollectRefused,
   containerArgs,
@@ -386,12 +387,25 @@ describe('containerArgs', () => {
     });
   const pair = (list: string[], flag: string) => list[list.indexOf(flag) + 1];
 
-  test('drops capabilities and limits processes and memory', () => {
-    const list = args(false);
-    expect(pair(list, '--cap-drop')).toBe('ALL');
-    expect(pair(list, '--security-opt')).toBe('no-new-privileges');
-    expect(pair(list, '--pids-limit')).toBe(String(PIDS_LIMIT));
-    expect(pair(list, '--memory')).toBe(MEMORY_LIMIT);
+  test.each([
+    ['a sandbox', args(false)],
+    ['the volume chown helper', chownArgs('v', 'img')],
+  ])(
+    '%s drops capabilities and limits processes, memory and swap',
+    (_, list) => {
+      expect(pair(list, '--cap-drop')).toBe('ALL');
+      expect(pair(list, '--security-opt')).toBe('no-new-privileges');
+      expect(pair(list, '--pids-limit')).toBe(String(PIDS_LIMIT));
+      expect(pair(list, '--memory')).toBe(MEMORY_LIMIT);
+      expect(pair(list, '--memory-swap')).toBe(MEMORY_LIMIT);
+      expect(pair(list, '--network')).toBe('none');
+    }
+  );
+
+  test('the chown helper keeps only CHOWN', () => {
+    const list = chownArgs('v', 'img');
+    expect(list.filter((a) => a === '--cap-add')).toHaveLength(1);
+    expect(pair(list, '--cap-add')).toBe('CHOWN');
   });
 
   test('has no network unless the Policy allows it', () => {

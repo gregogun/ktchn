@@ -84,6 +84,21 @@ const docker = (args: readonly string[]) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 
+// What every container ktchn runs is limited by: no capabilities, no new
+// privileges, a cap on processes, and a cap on memory with no swap beyond it.
+const LIMITS = [
+  '--cap-drop',
+  'ALL',
+  '--security-opt',
+  'no-new-privileges',
+  '--pids-limit',
+  String(PIDS_LIMIT),
+  '--memory',
+  MEMORY_LIMIT,
+  '--memory-swap',
+  MEMORY_LIMIT,
+];
+
 // What every sandbox container is run with. The network is a Policy of the
 // job: `--network none` unless the job allows it (ADR 0015).
 export const containerArgs = (opts: {
@@ -102,20 +117,34 @@ export const containerArgs = (opts: {
   opts.name,
   '--label',
   `${LABEL}=${opts.runId}`,
-  '--cap-drop',
-  'ALL',
-  '--security-opt',
-  'no-new-privileges',
-  '--pids-limit',
-  String(PIDS_LIMIT),
-  '--memory',
-  MEMORY_LIMIT,
+  ...LIMITS,
   ...(opts.network ? [] : ['--network', 'none']),
   ...opts.mounts,
   '--entrypoint',
   'sleep',
   opts.image,
   'infinity',
+];
+
+// A new volume belongs to root. This hands it to the sandbox's user, as root
+// with only CHOWN.
+export const chownArgs = (volume: string, image: string) => [
+  'run',
+  '--rm',
+  '-u',
+  'root',
+  ...LIMITS,
+  '--cap-add',
+  'CHOWN',
+  '--network',
+  'none',
+  '-v',
+  `${volume}:${COPY_PATH}`,
+  '--entrypoint',
+  'chown',
+  image,
+  '1000:1000',
+  COPY_PATH,
 ];
 
 const piEnvBinDir = () =>
@@ -206,26 +235,7 @@ export const openSandbox = async (opts: {
         volume,
       ]);
       made = true;
-      // A new volume belongs to root.
-      docker([
-        'run',
-        '--rm',
-        '-u',
-        'root',
-        '--cap-drop',
-        'ALL',
-        '--cap-add',
-        'CHOWN',
-        '--network',
-        'none',
-        '-v',
-        `${volume}:${COPY_PATH}`,
-        '--entrypoint',
-        'chown',
-        opts.image,
-        '1000:1000',
-        COPY_PATH,
-      ]);
+      docker(chownArgs(volume, opts.image));
       mounts.push('-v', `${volume}:${COPY_PATH}`);
     }
     if (opts.piEnv) {
