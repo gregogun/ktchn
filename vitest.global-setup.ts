@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,18 +19,30 @@ const git = (...args: string[]) => {
   }).trim();
 };
 
+const digest = (file: string) => {
+  try {
+    return createHash('sha256')
+      .update(readFileSync(join(repo, file)))
+      .digest('hex');
+  } catch {
+    return 'missing';
+  }
+};
+
 const snapshot = () => {
   const tracked = git('ls-files', '-z').split('\0').filter(Boolean);
   return {
     head: git('rev-parse', 'HEAD'),
     tracked,
-    missing: tracked.filter((file) => !existsSync(join(repo, file))),
+    status: git('status', '--porcelain', '-z'),
+    contents: new Map(tracked.map((file) => [file, digest(file)])),
   };
 };
 
 // A test that deletes or rewrites the repository it runs in has failed, however
-// green it looks. This records HEAD and the tracked files before the suite and
-// fails the run if either moved, or a tracked file is gone, once it ends.
+// green it looks. This records HEAD, the tracked files, their contents and the
+// working tree status before the suite, and fails the run if any moved once it
+// ends.
 export default function setup() {
   const before = snapshot();
   return () => {
@@ -51,8 +64,14 @@ export default function setup() {
     const gained = after.tracked.filter((file) => !was.has(file));
     if (lost.length > 0) problems.push(`no longer tracked: ${lost.join(', ')}`);
     if (gained.length > 0) problems.push(`newly tracked: ${gained.join(', ')}`);
-    if (after.missing.length > 0) {
-      problems.push(`missing from disk: ${after.missing.join(', ')}`);
+    const changed = before.tracked.filter(
+      (file) => after.contents.get(file) !== before.contents.get(file)
+    );
+    if (changed.length > 0) {
+      problems.push(`changed or missing on disk: ${changed.join(', ')}`);
+    }
+    if (after.status !== before.status) {
+      problems.push('the working tree status changed');
     }
     if (problems.length > 0) {
       throw new Error(`A test changed the repository:\n${problems.join('\n')}`);
