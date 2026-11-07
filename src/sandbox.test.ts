@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -287,7 +286,7 @@ describe('seed', () => {
 describe('openReviewSandbox', () => {
   test('opens a sandbox with no volume and no pi-env', async () => {
     const w = world();
-    const { sandbox } = fakeSandbox(({ command }) =>
+    const { sandbox, calls } = fakeSandbox(({ command }) =>
       command.startsWith('test -e') ? { exitCode: 1 } : { exitCode: 0 }
     );
     const opened: unknown[] = [];
@@ -309,8 +308,8 @@ describe('openReviewSandbox', () => {
         image: 'img',
       }),
     ]);
-    expect(readFileSync(join(w.repo, 'HEAD'), 'utf8')).toMatch(/refs/);
-    expect(() => git(w.repo, 'rev-parse', 'refs/ktchn/review')).toThrow();
+    expect(calls.some((c) => typeof c.opts.stdin === 'number')).toBe(true);
+    expect(git(w.repo, 'for-each-ref', 'refs/ktchn')).toBe('');
   });
 });
 
