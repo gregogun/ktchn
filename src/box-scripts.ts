@@ -11,7 +11,12 @@ export const SEEDED = `${COPY_PATH}/.git/ktchn-seeded`;
 export const GUARD_EXIT = 97;
 
 // Git run on what the agent wrote must not run programs its configuration
-// names or wait on them, whatever the agent put in .git/config.
+// names or wait on them, whatever the agent put in .git/config. One way stays
+// open: a filter driver named in the copy's .gitattributes or
+// .git/info/attributes and defined in its config runs when status reads
+// a file. It runs inside the sandbox as the agent's user,
+// under exec's timeout and output cap, so it can do nothing the agent could
+// not already do there (ADR 0015).
 export const SAFE_GIT = [
   'git',
   '--no-optional-locks',
