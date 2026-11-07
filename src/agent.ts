@@ -10,6 +10,7 @@ import { CodingTools } from '@earendil-works/pi-durable/tools';
 import type { RemoteExecutionEnv } from '@earendil-works/pi-env';
 import type { AgentOutcome } from './driver.ts';
 import type { AgentRequest, FreshAgentInput, ModelCall } from './ledger.ts';
+import { boundAgentEnv } from './agent-env.ts';
 import { COPY_PATH } from './box-scripts.ts';
 
 export const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash-0731';
@@ -94,12 +95,13 @@ export const openAgent = async (opts: {
     },
   });
   models.setProvider(openrouterProvider());
+  const env = boundAgentEnv(opts.env);
   const registry = createRegistry();
   registry.install(CodingTools);
 
   const harness = await Harness.open(
     await openNodeSqliteStorage(opts.storePath),
-    { models, registry, env: () => opts.env },
+    { models, registry, env: () => env },
     ctx
   );
   const root = await harness.root(ctx, {

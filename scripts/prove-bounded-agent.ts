@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
+import { boundAgentEnv } from '../src/agent-env.ts';
 import { COPY_PATH } from '../src/box-scripts.ts';
 import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
@@ -14,23 +15,30 @@ import { DEFAULT_MODEL } from '../src/agent.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 
 const image = process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
-const deadlineMs = Number(process.env.PROOF_DEADLINE_MS ?? 15_000);
+const deadlineMs = Number(process.env.PROOF_DEADLINE_MS ?? 60_000);
 
-const agentEnv = (env: ExecutionEnv): ExecutionEnv => env;
+const defaultTimeoutMs = Number(process.env.PROOF_DEFAULT_TIMEOUT_MS ?? 8000);
+const agentEnv = (env: ExecutionEnv): ExecutionEnv =>
+  boundAgentEnv(env, {
+    defaultTimeoutMs,
+    maxTimeoutMs: defaultTimeoutMs + 3000,
+    maxOutputBytes: 1024 * 1024,
+  });
 
-const bash = async (env: ExecutionEnv, command: string) => {
+const bash = async (env: ExecutionEnv, command: string, timeout?: number) => {
   let seen = 0;
   let omitted = 0;
-  let tail = '';
+  let noted = '';
   const started = Date.now();
   const result = await env.exec(
     command,
     {
       cwd: COPY_PATH,
+      ...(timeout === undefined ? {} : { timeout }),
       onOutput: (text, _context, info) => {
         seen += Buffer.byteLength(text);
         omitted += info.skipped?.bytes ?? 0;
-        tail = (tail + text).slice(-300);
+        if (text.includes('[ktchn:')) noted += text;
       },
       spill: { afterBytes: 50 * 1024, afterLines: 2000 },
       window: {
@@ -49,8 +57,8 @@ const bash = async (env: ExecutionEnv, command: string) => {
   console.log(
     `  agent$ ${command.slice(0, 40)} -> ${how} after ${seconds}s; produced ${seen + omitted} bytes`
   );
-  if (tail.includes('[ktchn')) console.log(`    note: ${tail.trim()}`);
-  return { result, produced: seen + omitted, seconds: Number(seconds) };
+  if (noted !== '') console.log(`    note: ${noted.trim()}`);
+  return { result, noted, produced: seen + omitted, seconds: Number(seconds) };
 };
 
 const repo = makeTempRepo();
@@ -85,15 +93,36 @@ const outcome: { big?: number; seconds?: number } = {};
 const script = async (sandbox: Sandbox) => {
   assert(sandbox.env !== undefined, 'the agent sandbox has pi-env');
   const env = agentEnv(sandbox.env);
-  const big = await bash(env, "head -c 20000000 /dev/zero | tr '\\0' x");
+  const [big, hang] = await Promise.all([
+    bash(env, 'yes x'),
+    bash(env, 'sleep 100000'),
+  ]);
   outcome.big = big.produced;
-  check(!big.result.ok, 'huge output was stopped');
-  check(big.produced < 5_000_000, 'huge output was capped near 1 MiB');
-  const hang = await bash(env, 'sleep 100000');
   outcome.seconds = hang.seconds;
+  check(
+    !big.result.ok && big.result.error.code === 'aborted',
+    'endless output was killed by the output limit'
+  );
+  check(big.noted.includes('printed more than'), 'and the agent was told');
+  check(big.produced < 5_000_000, 'endless output was capped near 1 MiB');
   check(
     !hang.result.ok && hang.result.error.code === 'timeout',
     'hanging command timed out'
+  );
+  check(
+    hang.seconds >= defaultTimeoutMs / 1000 &&
+      hang.seconds < defaultTimeoutMs / 1000 + 5,
+    `timed out in about the default of ${defaultTimeoutMs / 1000}s`
+  );
+  const asked = await bash(env, 'sleep 100000', 1000);
+  check(
+    asked.noted.includes('above the ceiling'),
+    'a request above the ceiling was clamped and said so'
+  );
+  const left = await sandbox.exec('pgrep -f "sleep 10000[0]" | wc -l');
+  check(
+    left.stdout.trim() === '0',
+    'the killed command left no process behind'
   );
   await bash(env, 'echo done > done.txt && git add . && git commit -qm done');
 };
@@ -137,7 +166,7 @@ const settled = await Promise.race([
 
 if (settled === 'deadline') {
   console.log(
-    `RED: the round was still running after ${deadlineMs / 1000}s (huge output produced ${outcome.big ?? 'n/a'} bytes)`
+    `RED: the round was still running after ${deadlineMs / 1000}s (endless output produced ${outcome.big ?? 'n/a'} bytes)`
   );
   await finish(1);
 } else if ('error' in settled) {
@@ -154,7 +183,7 @@ if (settled === 'deadline') {
     await finish(1);
   }
   console.log(
-    `GREEN: huge output stopped at ${outcome.big} bytes, hanging command timed out after ${outcome.seconds}s, round reached review`
+    `GREEN: endless output stopped at ${outcome.big} bytes, hanging command timed out after ${outcome.seconds}s, round reached review`
   );
   await finish(0);
 }
