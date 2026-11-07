@@ -148,20 +148,21 @@ export const sweepFinishedRuns = (
 };
 
 // A volume is made only after its run's directory, so a volume whose run has
-// no directory is a leftover: a crash or a failed start, or a run swept
+// no directory is a leftover (only this home's volumes count, since homes
+// share one docker): a crash or a failed start, or a run swept
 // without its volume. The listing is by label, so runs this ledger never
 // heard of are found too. A run another process holds is left for it.
 export const sweepOrphanVolumes = (
   home: string,
   ledger: Ledger,
-  volumes: () => { runId: string }[] = listVolumes,
+  volumes: () => { runId: string; home: string }[] = listVolumes,
   removeSandboxesOf: (runId: string) => unknown = (runId) =>
     removeSandboxes(runId, true)
 ): Sweep => {
   const sweep: Sweep = { removed: [], skipped: [], failed: [] };
   const seen = new Set<string>();
-  for (const { runId } of volumes()) {
-    if (seen.has(runId) || runId === '') continue;
+  for (const { runId, home: owner } of volumes()) {
+    if (owner !== home || seen.has(runId) || runId === '') continue;
     seen.add(runId);
     if (existsSync(runDir(home, runId))) continue;
     try {

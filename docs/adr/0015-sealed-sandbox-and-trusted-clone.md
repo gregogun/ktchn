@@ -58,7 +58,7 @@ Each round's sandbox is a container with a collect and a review variant, run by 
 - Every command through `exec` has a timeout and a cap on output. The default is 10 minutes and 1 MiB, and a caller may pass its own. A command that outruns either is killed: the `docker exec` client is sent SIGKILL and everything in the container but its init is killed too, because killing the client leaves its command running. Collect treats a stopped command as a failed round with a finding for the agent, not a crash, so a resume cannot loop on it. The status and check text that goes back to the agent is capped.
 - A pack is capped in two places: the host stops reading the stream at 256 MiB, and `index-pack --max-input-size` refuses one that claims more.
 - A collected commit must descend from the commit the run started from (`merge-base --is-ancestor <base> <oid>`), so an agent cannot hand back an unrelated history.
-- A volume is made after its run's directory and removed again if the sandbox fails to open. Each start also removes volumes by their `ktchn.run` label whose run has no directory, so a crash between the two leaks nothing.
+- A volume is made after its run's directory and removed again if the sandbox fails to open. Each start also removes volumes by their `ktchn.run` label, of its own home (`ktchn.home`), whose run has no directory, so a crash between the two leaks nothing.
 - Git run in the sandbox on what the agent wrote is `SAFE_GIT`: no fsmonitor, no hooks, no pager, no external diff, no attributes file, no lock taking.
 
 ## The network is a Policy

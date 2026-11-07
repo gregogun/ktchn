@@ -88,6 +88,7 @@ export const buildShell = (opts: {
       name: withAgent ? sandboxName(runId, number) : `ktchn-${runId}-collect`,
       image: opts.image,
       volume: true,
+      home: opts.home,
       piEnv: withAgent,
       network: job.policy.network,
     });

@@ -20,6 +20,7 @@ import { git, importPack, isAncestor, OID, tryGit } from './git.ts';
 const PI_ENV_DIR = '/opt/pi-env';
 const REVIEW_REF = 'refs/ktchn/review';
 const LABEL = 'ktchn.run';
+const HOME_LABEL = 'ktchn.home';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const REF = /^[A-Za-z0-9._/-]+$/;
 
@@ -112,20 +113,24 @@ const volumeExists = (volume: string) =>
   docker(['volume', 'ls', '-q', '--filter', `name=^${volume}$`]) !== '';
 
 // Every volume ktchn made, by label, whether or not its run is still known.
-export const listVolumes = (): { runId: string; volume: string }[] =>
+export const listVolumes = (): {
+  runId: string;
+  volume: string;
+  home: string;
+}[] =>
   docker([
     'volume',
     'ls',
     '--filter',
     `label=${LABEL}`,
     '--format',
-    `{{.Name}} {{.Label "${LABEL}"}}`,
+    `{{.Name}}\t{{.Label "${LABEL}"}}\t{{.Label "${HOME_LABEL}"}}`,
   ])
     .split('\n')
     .filter(Boolean)
     .map((line) => {
-      const [volume = '', runId = ''] = line.split(' ');
-      return { runId, volume };
+      const [volume = '', runId = '', home = ''] = line.split('\t');
+      return { runId, volume, home };
     });
 
 // Removes every container of a run, and with `withVolume` its volume too.
@@ -150,6 +155,9 @@ export const openSandbox = async (opts: {
   name: string;
   image: string;
   volume: boolean;
+  // The ktchn home the run belongs to. A volume is labelled with it so one
+  // home's sweep never removes another's.
+  home?: string;
   piEnv: boolean;
   // The job's Policy. A sandbox with no network cannot fetch anything.
   network: boolean;
@@ -170,7 +178,16 @@ export const openSandbox = async (opts: {
   let made = false;
   try {
     if (opts.volume) {
-      docker(['volume', 'create', '--label', `${LABEL}=${runId}`, volume]);
+      if (opts.home === undefined) throw new Error('A volume needs a home');
+      docker([
+        'volume',
+        'create',
+        '--label',
+        `${LABEL}=${runId}`,
+        '--label',
+        `${HOME_LABEL}=${opts.home}`,
+        volume,
+      ]);
       made = true;
       // A new volume belongs to root.
       docker([

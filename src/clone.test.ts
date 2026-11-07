@@ -285,9 +285,9 @@ describe('removing runs', () => {
 
 describe('sweepOrphanVolumes', () => {
   const volumes =
-    (...ids: string[]) =>
+    (home: string, ...ids: string[]) =>
     () =>
-      ids.map((runId) => ({ runId }));
+      ids.map((runId) => ({ runId, home }));
 
   test('removes volumes whose run has no directory, known to the ledger or not', () => {
     const { owner, home, base } = setup();
@@ -297,11 +297,24 @@ describe('sweepOrphanVolumes', () => {
     const sweep = sweepOrphanVolumes(
       home,
       ledger,
-      volumes('kept', 'gone', 'gone', 'stranger'),
+      volumes(home, 'kept', 'gone', 'gone', 'stranger'),
       (id) => removed.push(id)
     );
     expect(sweep.removed).toEqual(['gone', 'stranger']);
     expect(removed).toEqual(['gone', 'stranger']);
+  });
+
+  test("leaves another home's volumes alone", () => {
+    const { home } = setup();
+    const removed: string[] = [];
+    const sweep = sweepOrphanVolumes(
+      home,
+      openLedger(':memory:'),
+      volumes('/somewhere/else', 'theirs'),
+      (id) => removed.push(id)
+    );
+    expect(sweep.removed).toEqual([]);
+    expect(removed).toEqual([]);
   });
 
   test('leaves a volume whose run another process holds', () => {
@@ -309,8 +322,11 @@ describe('sweepOrphanVolumes', () => {
     const ledger = openLedger(':memory:');
     ledger.acquireLease('busy');
     const removed: string[] = [];
-    const sweep = sweepOrphanVolumes(home, ledger, volumes('busy'), (id) =>
-      removed.push(id)
+    const sweep = sweepOrphanVolumes(
+      home,
+      ledger,
+      volumes(home, 'busy'),
+      (id) => removed.push(id)
     );
     expect(sweep.skipped).toEqual(['busy']);
     expect(removed).toEqual([]);
@@ -321,7 +337,7 @@ describe('sweepOrphanVolumes', () => {
     const sweep = sweepOrphanVolumes(
       home,
       openLedger(':memory:'),
-      volumes('a', 'b'),
+      volumes(home, 'a', 'b'),
       (id) => {
         if (id === 'a') throw new Error('busy');
       }
