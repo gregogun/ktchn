@@ -55,15 +55,47 @@ const checkOid = (id: string) => {
   if (!OID.test(id)) throw new Error(`Not an object id: ${id}`);
 };
 
+// Whether `ancestor` is reachable from `descendant`, both already in `repo`.
+export const isAncestor = (
+  repo: string,
+  ancestor: string,
+  descendant: string
+) => {
+  checkOid(ancestor);
+  checkOid(descendant);
+  try {
+    git(repo, ['merge-base', '--is-ancestor', ancestor, descendant]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // The one way anything an agent wrote enters a repository the host reads:
 // a pack file, which git checks object by object, and then a check that
 // everything `oid` needs is present. Nothing in the pack is ever executed or
 // checked out.
-export const importPack = (pack: string, repo: string, oid: string) => {
+export const importPack = (
+  pack: string,
+  repo: string,
+  oid: string,
+  opts: { maxBytes?: number } = {}
+) => {
   checkOid(oid);
   const input = openSync(pack, 'r');
   try {
-    git(repo, ['index-pack', '--stdin', '--strict'], { stdin: input });
+    git(
+      repo,
+      [
+        'index-pack',
+        '--stdin',
+        '--strict',
+        ...(opts.maxBytes === undefined
+          ? []
+          : [`--max-input-size=${opts.maxBytes}`]),
+      ],
+      { stdin: input }
+    );
   } finally {
     closeSync(input);
   }

@@ -98,6 +98,7 @@ export const buildShell = (opts: {
           sandbox: (open as { sandbox: Sandbox }).sandbox,
           repo: theClone(),
           branch: job.branch,
+          base: opts.base,
         });
       } catch (error) {
         return {

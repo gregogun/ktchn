@@ -70,6 +70,7 @@ export const protectedChanges = (
   );
 
 const LISTED = 40;
+const ENTRY_CHARS = 200;
 
 // What review checks on the host before any check runs: the run's branch must
 // hold the agent's whole change, as a commit, touching nothing protected. It
@@ -90,7 +91,10 @@ export const hostFindings = (opts: {
 
   const entries = dirty.split('\0').filter(Boolean);
   if (entries.length > 0) {
-    const shown = entries.slice(0, LISTED).join('\n');
+    const shown = entries
+      .slice(0, LISTED)
+      .map((entry) => entry.slice(0, ENTRY_CHARS))
+      .join('\n');
     const more =
       entries.length > LISTED
         ? `\n... and ${entries.length - LISTED} more`

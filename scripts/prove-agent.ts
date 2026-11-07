@@ -11,11 +11,12 @@ import { git, makeTempRepo } from './temp-repo.ts';
 
 const repo = makeTempRepo();
 const home = mkdtempSync(join(tmpdir(), 'ktchn-agent-home-'));
+const base = git(repo, 'rev-parse', 'HEAD');
 const clone = ensureClone({
   home,
   runId: 'proof-agent',
   source: repo,
-  base: git(repo, 'rev-parse', 'HEAD'),
+  base,
   branch: 'ktchn/proof-agent',
 });
 const mainBefore = git(repo, 'rev-parse', 'main');
@@ -73,6 +74,7 @@ try {
     sandbox: opened,
     repo: clone,
     branch: 'ktchn/proof-agent',
+    base,
   });
 } finally {
   await opened.close();

@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import {
   closeSync,
   mkdtempSync,
@@ -13,8 +13,9 @@ import {
   packagedDaemon,
   RemoteExecutionEnv,
 } from '@earendil-works/pi-env';
-import { COPY_PATH, SEEDED, seedScript } from './box-scripts.ts';
-import { git, importPack, OID, tryGit } from './git.ts';
+import { COPY_PATH, SAFE_GIT, SEEDED, seedScript } from './box-scripts.ts';
+import { type ExecResult, runBounded } from './bounded.ts';
+import { git, importPack, isAncestor, OID, tryGit } from './git.ts';
 
 const PI_ENV_DIR = '/opt/pi-env';
 const REVIEW_REF = 'refs/ktchn/review';
@@ -22,7 +23,24 @@ const LABEL = 'ktchn.run';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const REF = /^[A-Za-z0-9._/-]+$/;
 
-export type ExecResult = { exitCode: number; stdout: string; stderr: string };
+export const EXEC_TIMEOUT_MS = 10 * 60_000;
+export const MAX_OUTPUT_BYTES = 1024 * 1024;
+export const MAX_PACK_BYTES = 256 * 1024 * 1024;
+const QUICK_MS = 60_000;
+const PACK_MS = 5 * 60_000;
+
+export type ExecOptions = {
+  stdin?: string | number;
+  // Writes stdout to this file instead of returning it.
+  stdoutFile?: string;
+  // Most bytes kept from stdout and from stderr, or written to `stdoutFile`.
+  maxBytes?: number;
+  timeoutMs?: number;
+};
+
+// The box stopped a command or the host did, so what the sandbox said cannot
+// be trusted to be whole. It is a finding for the agent, not a crash of ktchn.
+export class CollectRefused extends Error {}
 
 // A sandbox is a container whose files exist only inside docker. The host
 // copies code in and data out, and never mounts or reads what the agent
@@ -30,10 +48,9 @@ export type ExecResult = { exitCode: number; stdout: string; stderr: string };
 export type Sandbox = {
   name: string;
   env: RemoteExecutionEnv | undefined;
-  exec: (
-    command: string,
-    opts?: { stdin?: string | number; stdout?: number }
-  ) => Promise<ExecResult>;
+  // Every command is bounded: it is killed when it outruns `timeoutMs` or
+  // prints more than `maxBytes`, and the result says which (`limit`).
+  exec: (command: string, opts?: ExecOptions) => Promise<ExecResult>;
   close: () => Promise<void>;
 };
 
@@ -151,29 +168,22 @@ export const openSandbox = async (opts: {
             cwd: COPY_PATH,
           }),
     exec: (command, io = {}) =>
-      new Promise((resolve) => {
-        const child = spawn(
-          'docker',
-          ['exec', '-i', '-w', COPY_PATH, name, 'sh', '-c', command],
-          {
-            stdio: [
-              typeof io.stdin === 'number' ? io.stdin : 'pipe',
-              io.stdout ?? 'pipe',
-              'pipe',
-            ],
-          }
-        );
-        let stdout = '';
-        let stderr = '';
-        child.stdout?.on('data', (d: Buffer) => (stdout += String(d)));
-        child.stderr?.on('data', (d: Buffer) => (stderr += String(d)));
-        child.on('error', (error) =>
-          resolve({ exitCode: 127, stdout, stderr: String(error) })
-        );
-        child.on('close', (code) =>
-          resolve({ exitCode: code ?? 1, stdout, stderr })
-        );
-        if (typeof io.stdin !== 'number') child.stdin?.end(io.stdin);
+      runBounded({
+        file: 'docker',
+        args: ['exec', '-i', '-w', COPY_PATH, name, 'sh', '-c', command],
+        stdin: io.stdin,
+        stdoutFile: io.stdoutFile,
+        maxBytes: io.maxBytes ?? MAX_OUTPUT_BYTES,
+        timeoutMs: io.timeoutMs ?? EXEC_TIMEOUT_MS,
+        // Killing the docker client leaves its command running in the
+        // container, so everything but the container's init is killed too.
+        onKill: () =>
+          execFile(
+            'docker',
+            ['exec', name, 'sh', '-c', 'kill -s KILL -- -1'],
+            { timeout: 10_000 },
+            () => {}
+          ),
       }),
     close: async () => {
       connection?.close();
@@ -183,8 +193,20 @@ export const openSandbox = async (opts: {
 };
 
 const succeed = (result: ExecResult, what: string) => {
+  if (result.limit === 'timeout') {
+    throw new CollectRefused(
+      `${what} was stopped in the sandbox for taking too long.`
+    );
+  }
+  if (result.limit === 'output') {
+    throw new CollectRefused(
+      `${what} was stopped in the sandbox for printing more than the limit.`
+    );
+  }
   if (result.exitCode !== 0) {
-    throw new Error(`${what} failed in the sandbox: ${result.stderr.trim()}`);
+    throw new Error(
+      `${what} failed in the sandbox: ${result.stderr.trim().slice(0, 300)}`
+    );
   }
   return result.stdout.trim();
 };
@@ -201,7 +223,9 @@ export const seed = async (
   for (const name of [ref, branch ?? 'x']) {
     if (!REF.test(name)) throw new Error(`Not a ref name: ${name}`);
   }
-  const done = await sandbox.exec(`test -e ${SEEDED}`);
+  const done = await sandbox.exec(`test -e ${SEEDED}`, {
+    timeoutMs: QUICK_MS,
+  });
   if (done.exitCode === 0) return;
   const scratch = mkdtempSync(join(tmpdir(), 'ktchn-seed-'));
   try {
@@ -215,6 +239,7 @@ export const seed = async (
       succeed(
         await sandbox.exec(seedScript({ ref, branch, identity }), {
           stdin: input,
+          timeoutMs: PACK_MS,
         }),
         'Seeding'
       );
@@ -229,14 +254,17 @@ export const seed = async (
 // Review's own sandbox: a fresh repository holding the reviewed commit with
 // no volume, no pi-env and no secrets, so checks judge that commit and only
 // that commit.
-export const openReviewSandbox = async (opts: {
-  runId: string;
-  repo: string;
-  oid: string;
-  image: string;
-}): Promise<Sandbox> => {
+export const openReviewSandbox = async (
+  opts: {
+    runId: string;
+    repo: string;
+    oid: string;
+    image: string;
+  },
+  open: typeof openSandbox = openSandbox
+): Promise<Sandbox> => {
   if (!OID.test(opts.oid)) throw new Error(`Not an object id: ${opts.oid}`);
-  const sandbox = await openSandbox({
+  const sandbox = await open({
     runId: opts.runId,
     name: `ktchn-${opts.runId}-review`,
     image: opts.image,
@@ -264,46 +292,58 @@ export type Collected = {
 // The end of a round. Everything the host will ever learn about the agent's
 // work leaves the sandbox here: a commit id, a status listing, and a pack
 // that git checks object by object before the run's branch moves to it. The
-// sandbox's copy itself is never read.
+// sandbox's copy itself is never read. The commit must descend from `base`,
+// the commit the run started from.
 export const collect = async (opts: {
   sandbox: Sandbox;
   repo: string;
   branch: string;
+  base: string;
 }): Promise<Collected> => {
-  const { sandbox, repo, branch } = opts;
+  const { sandbox, repo, branch, base } = opts;
   const ref = `refs/heads/${branch}`;
   const tip = git(repo, ['rev-parse', '--verify', `${ref}^{commit}`]);
   const oid = succeed(
-    await sandbox.exec(`git rev-parse --verify ${ref}^{commit}`),
+    await sandbox.exec(`${SAFE_GIT} rev-parse --verify ${ref}^{commit}`, {
+      timeoutMs: QUICK_MS,
+    }),
     `Reading ${ref}`
   );
-  if (!OID.test(oid)) throw new Error(`The sandbox answered ${oid} for ${ref}`);
+  if (!OID.test(oid)) {
+    throw new Error(
+      `The sandbox answered ${oid.slice(0, 80)} for ${ref}, which is not a commit id`
+    );
+  }
   const status = await sandbox.exec(
-    'git status --porcelain -z --untracked-files=all'
+    `${SAFE_GIT} status --porcelain -z --untracked-files=all --ignore-submodules=all`,
+    { timeoutMs: QUICK_MS }
   );
   succeed(status, 'Reading the status');
   if (oid !== tip) {
     const scratch = mkdtempSync(join(tmpdir(), 'ktchn-pack-'));
     try {
       const file = join(scratch, 'objects.pack');
-      const pack = async (exclude: string) => {
-        const out = openSync(file, 'w');
-        try {
-          return await sandbox.exec(
-            'git pack-objects --revs --stdout --quiet',
-            { stdin: `${oid}\n${exclude}`, stdout: out }
-          );
-        } finally {
-          closeSync(out);
-        }
-      };
+      const pack = (exclude: string) =>
+        sandbox.exec(`${SAFE_GIT} pack-objects --revs --stdout --quiet`, {
+          stdin: `${oid}\n${exclude}`,
+          stdoutFile: file,
+          maxBytes: MAX_PACK_BYTES,
+          timeoutMs: PACK_MS,
+        });
       let sent = await pack(`^${tip}\n`);
       // A tip the sandbox no longer has means a full pack.
-      if (sent.exitCode !== 0) sent = await pack('');
+      if (sent.exitCode !== 0 && sent.limit === undefined) {
+        sent = await pack('');
+      }
       succeed(sent, 'Packing');
-      importPack(file, repo, oid);
+      importPack(file, repo, oid, { maxBytes: MAX_PACK_BYTES });
     } finally {
       rmSync(scratch, { recursive: true, force: true });
+    }
+    if (!isAncestor(repo, base, oid)) {
+      throw new CollectRefused(
+        `The commit ${oid} on branch ${branch} does not descend from ${base}, the commit this job started from. Build on top of the branch's history and do not replace it.`
+      );
     }
     git(repo, ['update-ref', ref, oid, tip]);
   }
