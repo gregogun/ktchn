@@ -107,6 +107,22 @@ describe('runBounded', () => {
     expect(readFileSync(ok, 'utf8')).toBe('pack');
   });
 
+  test('a file that cannot be written stops the command and fails the run', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-bounded-')));
+    dirs.push(dir);
+    const started = Date.now();
+    const r = await runBounded({
+      ...node(endlessOut('stdout')),
+      stdoutFile: join(dir, 'missing', 'out.bin'),
+      maxBytes: 200_000,
+      timeoutMs: 20_000,
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.limit).toBeUndefined();
+    expect(r.stderr).toContain('ENOENT');
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
   test('reports a command that cannot start', async () => {
     const r = await runBounded({
       file: join(tmpdir(), 'ktchn-no-such-binary'),

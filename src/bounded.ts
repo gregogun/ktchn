@@ -48,6 +48,14 @@ export const runBounded = (run: BoundedRun): Promise<ExecResult> =>
     let cleanup: Promise<void> = Promise.resolve();
     const sink =
       stdoutFile === undefined ? undefined : createWriteStream(stdoutFile);
+    let writeFailed = false;
+    sink?.on('error', (error) => {
+      writeFailed = true;
+      err.push(
+        Buffer.from(`ktchn could not write the output: ${String(error)}`)
+      );
+      child.kill('SIGKILL');
+    });
 
     const trip = (which: Limit) => {
       if (limit !== undefined) return;
@@ -99,13 +107,15 @@ export const runBounded = (run: BoundedRun): Promise<ExecResult> =>
             ? TIMEOUT_EXIT
             : limit === 'output'
               ? OUTPUT_EXIT
-              : (code ?? 1),
+              : writeFailed
+                ? 1
+                : (code ?? 1),
         stdout: Buffer.concat(out).toString('utf8'),
         stderr: Buffer.concat(err).toString('utf8'),
         ...(limit === undefined ? {} : { limit }),
       });
       const settle = () => cleanup.then(() => resolve(result()));
-      if (sink === undefined) void settle();
+      if (sink === undefined || writeFailed) void settle();
       else sink.end(() => void settle());
     };
   });
