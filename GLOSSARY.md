@@ -65,7 +65,7 @@ The isolation boundary a run's agent works inside. It holds its own copy of the 
 _Avoid_: container, box, station, workspace
 
 **Round**:
-One attempt by the agent at a job, from the moment it is given the job or the reviewer's findings until it stops.
+One stretch of the agent's work within a run, from being given the job or the reviewer's findings until it stops and its work goes to review.
 _Avoid_: turn, iteration, pass, attempt
 
 **Workflow**:
@@ -129,7 +129,7 @@ To carry on a parked run once the owner has answered.
 _Avoid_: restart, retry, continue
 
 **Policy**:
-The rules for what a run may do and reach.
+The rules for what a run may do and reach. Today it is whether the run's sandbox has a network; the agent's has none unless the job asks for it, and review's never has one.
 _Avoid_: permissions, rules
 
 **Budget**:
