@@ -29,6 +29,7 @@ const bash = async (env: ExecutionEnv, command: string, timeout?: number) => {
   let seen = 0;
   let omitted = 0;
   let noted = '';
+  let tail = '';
   const started = Date.now();
   const result = await env.exec(
     command,
@@ -39,6 +40,7 @@ const bash = async (env: ExecutionEnv, command: string, timeout?: number) => {
         seen += Buffer.byteLength(text);
         omitted += info.skipped?.bytes ?? 0;
         if (text.includes('[ktchn:')) noted += text;
+        tail = (tail + text).slice(-50 * 1024);
       },
       spill: { afterBytes: 50 * 1024, afterLines: 2000 },
       window: {
@@ -58,7 +60,15 @@ const bash = async (env: ExecutionEnv, command: string, timeout?: number) => {
     `  agent$ ${command.slice(0, 40)} -> ${how} after ${seconds}s; produced ${seen + omitted} bytes`
   );
   if (noted !== '') console.log(`    note: ${noted.trim()}`);
-  return { result, noted, produced: seen + omitted, seconds: Number(seconds) };
+  const spillPath = result.ok ? result.value.spillPath : result.error.spillPath;
+  return {
+    result,
+    noted,
+    tail,
+    spillPath,
+    produced: seen + omitted,
+    seconds: Number(seconds),
+  };
 };
 
 const repo = makeTempRepo();
@@ -89,7 +99,7 @@ const check = (ok: boolean, what: string) => {
   if (!ok) failures.push(what);
 };
 
-const outcome: { big?: number; seconds?: number } = {};
+const outcome: { big?: number; seconds?: number; spill?: number } = {};
 const script = async (sandbox: Sandbox) => {
   assert(sandbox.env !== undefined, 'the agent sandbox has pi-env');
   const env = agentEnv(sandbox.env);
@@ -105,6 +115,11 @@ const script = async (sandbox: Sandbox) => {
   );
   check(big.noted.includes('printed more than'), 'and the agent was told');
   check(big.produced < 5_000_000, 'endless output was capped near 1 MiB');
+  assert(big.spillPath !== undefined, 'the endless output reported a spill');
+  const stat = await sandbox.exec(`stat -c %s ${big.spillPath}`);
+  outcome.spill = Number(stat.stdout.trim());
+  console.log(`  spill file ${big.spillPath}: ${outcome.spill} bytes`);
+  check(outcome.spill < 2 * 1024 * 1024, 'the spill file stayed near 1 MiB');
   check(
     !hang.result.ok && hang.result.error.code === 'timeout',
     'hanging command timed out'
@@ -118,6 +133,15 @@ const script = async (sandbox: Sandbox) => {
   check(
     asked.noted.includes('above the ceiling'),
     'a request above the ceiling was clamped and said so'
+  );
+  const clamped = await bash(
+    env,
+    'head -c 200000 /dev/zero | tr "\\0" y; echo; echo END',
+    1000
+  );
+  check(
+    clamped.tail.includes('above the ceiling') && clamped.tail.includes('END'),
+    'the clamp note survives in the last 50 KB of a long output'
   );
   const left = await sandbox.exec('pgrep -f "sleep 10000[0]" | wc -l');
   check(
@@ -183,7 +207,7 @@ if (settled === 'deadline') {
     await finish(1);
   }
   console.log(
-    `GREEN: endless output stopped at ${outcome.big} bytes, hanging command timed out after ${outcome.seconds}s, round reached review`
+    `GREEN: endless output stopped at ${outcome.big} bytes with a ${outcome.spill} byte spill file, hanging command timed out after ${outcome.seconds}s, round reached review`
   );
   await finish(0);
 }
