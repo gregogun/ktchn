@@ -253,4 +253,27 @@ describe('buildShell', () => {
     await expect(shell.runReview()).rejects.toThrow(/Docker daemon/);
     expect(events).not.toContain('review');
   });
+
+  test("a handoff removes the run's sandboxes and volume and keeps its clone, and repeats safely", async () => {
+    const w = world({ network: false });
+    const events: string[] = [];
+    const { shell } = buildShell({
+      ...w,
+      image: 'img',
+      openAgent: async () => ({
+        run: async () => ({}) as never,
+        close: async () => {},
+      }),
+      report: () => {},
+      sandboxes: recorder(events),
+    });
+    shell.handOff(w.base);
+    shell.handOff(w.base);
+    expect(events).toEqual([
+      `remove ${w.runId} true`,
+      `remove ${w.runId} true`,
+    ]);
+    expect(git(w.repo, 'rev-parse', w.job.branch)).toBe(w.base);
+    expect(existsSync(runDir(w.home, w.runId))).toBe(true);
+  });
 });

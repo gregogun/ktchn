@@ -151,14 +151,18 @@ export const buildShell = (opts: {
       });
     },
     closeSandbox: closeRound,
-    handOff: (oid) =>
+    // Once the owner has the commit the sandbox's copy is no longer needed.
+    // The clone stays until a PR is opened from it.
+    handOff: (oid) => {
       handOff({
         owner: job.repo,
         clone: theClone(),
         branch: job.branch,
         oid,
         base: opts.base,
-      }),
+      });
+      sandboxes.removeAll(runId, true);
+    },
     discard: async () => {
       await closeRound();
       // The run is over either way, and the next start sweeps what is left.
