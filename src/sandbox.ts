@@ -72,9 +72,15 @@ export const sandboxName = (runId: string, round: number) =>
   `ktchn-${runId}-r${round}`;
 const volumeName = (runId: string) => `ktchn-${runId}`;
 
+// A docker call that outruns this is killed, so a wedged daemon fails the
+// run instead of hanging ktchn. Every call here is a container or volume
+// operation on a local image.
+const DOCKER_TIMEOUT_MS = 5 * 60_000;
+
 const docker = (args: readonly string[]) =>
   execFileSync('docker', args, {
     encoding: 'utf8',
+    timeout: DOCKER_TIMEOUT_MS,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 

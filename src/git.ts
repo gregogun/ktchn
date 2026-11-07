@@ -32,6 +32,11 @@ const hostEnv = (scope: Scope): Record<string, string> => {
   return env;
 };
 
+// A host git call that outruns this is killed. index-pack of a pack at the
+// 256 MiB cap is the slowest call ktchn makes, and this leaves it room on a
+// slow disk. It stops a hostile pack or a stuck repository from hanging ktchn.
+const GIT_TIMEOUT_MS = 10 * 60_000;
+
 export const git = (
   cwd: string,
   args: readonly string[],
@@ -44,6 +49,7 @@ export const git = (
       input: typeof opts.stdin === 'string' ? opts.stdin : undefined,
       encoding: 'utf8',
       maxBuffer: 256 * 1024 * 1024,
+      timeout: GIT_TIMEOUT_MS,
       stdio: [
         typeof opts.stdin === 'number'
           ? opts.stdin
