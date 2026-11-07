@@ -254,6 +254,16 @@ describe('collect', () => {
     expect(w.tip()).toBe(w.base);
   });
 
+  test('refuses a branch that is not a ref name before running anything', async () => {
+    const w = world();
+    const { sandbox, calls } = box(w);
+
+    await expect(
+      collect({ sandbox, repo: w.repo, branch: 'a..b', base: w.base })
+    ).rejects.toThrow(/Not a ref name/);
+    expect(calls).toEqual([]);
+  });
+
   test('caps the pack the sandbox may send, and does not retry a capped one', async () => {
     const w = world();
     const { sandbox, calls } = box(w, (command) =>

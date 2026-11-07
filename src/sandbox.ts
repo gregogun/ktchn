@@ -15,14 +15,20 @@ import {
 } from '@earendil-works/pi-env';
 import { COPY_PATH, SAFE_GIT, SEEDED, seedScript } from './box-scripts.ts';
 import { type ExecResult, runBounded } from './bounded.ts';
-import { git, importPack, isAncestor, OID, tryGit } from './git.ts';
+import {
+  checkRefName,
+  git,
+  importPack,
+  isAncestor,
+  OID,
+  tryGit,
+} from './git.ts';
 
 const PI_ENV_DIR = '/opt/pi-env';
 const REVIEW_REF = 'refs/ktchn/review';
 const LABEL = 'ktchn.run';
 const HOME_LABEL = 'ktchn.home';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
-const REF = /^[A-Za-z0-9._/-]+$/;
 
 // Runs "$1" as the leader of its own process group, whose id it first writes
 // to the file "$0". Timing the command out kills that group.
@@ -357,9 +363,8 @@ export const seed = async (
   opts: { repo: string; ref: string; branch?: string }
 ) => {
   const { repo, ref, branch } = opts;
-  for (const name of [ref, branch ?? 'x']) {
-    if (!REF.test(name)) throw new Error(`Not a ref name: ${name}`);
-  }
+  checkRefName(ref);
+  if (branch !== undefined) checkRefName(branch);
   const done = await sandbox.exec(`test -e ${SEEDED}`, {
     timeoutMs: QUICK_MS,
   });
@@ -367,7 +372,7 @@ export const seed = async (
   const scratch = mkdtempSync(join(tmpdir(), 'ktchn-seed-'));
   try {
     const bundle = join(scratch, 'seed.bundle');
-    git(repo, ['bundle', 'create', '--quiet', bundle, ref]);
+    git(repo, ['bundle', 'create', '--quiet', bundle, '--end-of-options', ref]);
     const identity = ['user.name', 'user.email']
       .map((key) => [key, tryGit(repo, ['config', '--get', key])] as const)
       .filter((pair): pair is [string, string] => pair[1] !== undefined);
@@ -409,7 +414,7 @@ export const openReviewSandbox = async (
     piEnv: false,
     network: false,
   });
-  git(opts.repo, ['update-ref', REVIEW_REF, opts.oid]);
+  git(opts.repo, ['update-ref', '--end-of-options', REVIEW_REF, opts.oid]);
   try {
     await seed(sandbox, { repo: opts.repo, ref: REVIEW_REF });
     return sandbox;
@@ -417,7 +422,7 @@ export const openReviewSandbox = async (
     await sandbox.close();
     throw error;
   } finally {
-    tryGit(opts.repo, ['update-ref', '-d', REVIEW_REF]);
+    tryGit(opts.repo, ['update-ref', '-d', '--end-of-options', REVIEW_REF]);
   }
 };
 
@@ -439,13 +444,22 @@ export const collect = async (opts: {
   base: string;
 }): Promise<Collected> => {
   const { sandbox, repo, branch, base } = opts;
+  checkRefName(branch);
   const ref = `refs/heads/${branch}`;
-  const tip = git(repo, ['rev-parse', '--verify', `${ref}^{commit}`]);
+  const tip = git(repo, [
+    'rev-parse',
+    '--verify',
+    '--end-of-options',
+    `${ref}^{commit}`,
+  ]);
   const oid = await answer(
     sandbox,
-    await sandbox.exec(`${SAFE_GIT} rev-parse --verify ${ref}^{commit}`, {
-      timeoutMs: QUICK_MS,
-    }),
+    await sandbox.exec(
+      `${SAFE_GIT} rev-parse --verify --end-of-options ${ref}^{commit}`,
+      {
+        timeoutMs: QUICK_MS,
+      }
+    ),
     `Reading ${ref}`
   );
   if (!OID.test(oid)) {
@@ -495,7 +509,7 @@ export const collect = async (opts: {
         `The commit ${oid} on branch ${branch} does not descend from ${base}, the commit this job started from. Build on top of the branch's history and do not replace it.`
       );
     }
-    git(repo, ['update-ref', ref, oid, tip]);
+    git(repo, ['update-ref', '--end-of-options', ref, oid, tip]);
   }
   return { oid, dirty: status.stdout };
 };

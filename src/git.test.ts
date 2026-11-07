@@ -9,7 +9,14 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { copyCommit, git, importPack, isAncestor, tryGit } from './git.ts';
+import {
+  checkRefName,
+  copyCommit,
+  git,
+  importPack,
+  isAncestor,
+  tryGit,
+} from './git.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -137,5 +144,28 @@ describe('isAncestor', () => {
   test('throws when git cannot answer, rather than saying no', () => {
     const { to, base, oid } = setup();
     expect(() => isAncestor(to, base, oid)).toThrow();
+  });
+});
+
+describe('checkRefName', () => {
+  test.each(['ktchn/abc123', 'refs/heads/ktchn/abc123', 'refs/ktchn/review'])(
+    'accepts %s',
+    (name) => {
+      expect(() => checkRefName(name)).not.toThrow();
+    }
+  );
+
+  test.each([
+    '-x',
+    '--upload-pack=touch',
+    'a..b',
+    'refs/heads/a.lock',
+    'a//b',
+    'a/',
+    'a;b',
+    'a b',
+    '',
+  ])('refuses %j', (name) => {
+    expect(() => checkRefName(name)).toThrow(/Not a ref name/);
   });
 });

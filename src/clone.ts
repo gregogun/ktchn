@@ -6,7 +6,7 @@ import {
   rmSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { copyCommit, git, tryGit } from './git.ts';
+import { checkRefName, copyCommit, git, tryGit } from './git.ts';
 import type { Ledger } from './ledger.ts';
 import { listVolumes, removeSandboxes } from './sandbox.ts';
 import { isTerminal } from './run-machine.ts';
@@ -29,6 +29,7 @@ export const ensureClone = (opts: {
   base: string;
   branch: string;
 }): string => {
+  checkRefName(opts.branch);
   const dir = join(runDir(opts.home, opts.runId), 'repo');
   if (existsSync(dir)) return dir;
   const partial = `${dir}.partial`;
@@ -49,7 +50,12 @@ export const ensureClone = (opts: {
     ) {
       git(partial, ['fetch', '--quiet', '--no-tags', opts.source, opts.base]);
     }
-    git(partial, ['update-ref', `refs/heads/${opts.branch}`, opts.base]);
+    git(partial, [
+      'update-ref',
+      '--end-of-options',
+      `refs/heads/${opts.branch}`,
+      opts.base,
+    ]);
     git(partial, ['remote', 'remove', 'origin']);
     // The agent commits as the owner would. Nothing else of the owner's
     // configuration comes along.
@@ -80,10 +86,15 @@ export const handOff = (opts: {
   // The commit the run started from, which the owner's project already has.
   base: string;
 }) => {
+  checkRefName(opts.branch);
   const ref = `refs/heads/${opts.branch}`;
-  const current = tryGit(opts.owner, ['rev-parse', '--verify', '-q', ref], {
-    scope: 'owner',
-  });
+  const current = tryGit(
+    opts.owner,
+    ['rev-parse', '--verify', '-q', '--end-of-options', ref],
+    {
+      scope: 'owner',
+    }
+  );
   if (current === opts.oid) return;
   if (current !== undefined) {
     throw new Error(
@@ -97,7 +108,9 @@ export const handOff = (opts: {
     excluding: opts.base,
     toScope: 'owner',
   });
-  git(opts.owner, ['update-ref', ref, opts.oid, ZERO_OID], { scope: 'owner' });
+  git(opts.owner, ['update-ref', '--end-of-options', ref, opts.oid, ZERO_OID], {
+    scope: 'owner',
+  });
 };
 
 export const removeRun = (home: string, runId: string) =>

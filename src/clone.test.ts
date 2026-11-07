@@ -62,6 +62,14 @@ describe('ensureClone', () => {
     expect(existsSync(join(clone, 'b.txt'))).toBe(false);
   });
 
+  test('refuses a branch that is not a ref name and makes nothing', () => {
+    const { owner, home, base } = setup();
+    expect(() =>
+      ensureClone({ home, runId: 'r1', source: owner, base, branch: '-x' })
+    ).toThrow(/Not a ref name/);
+    expect(existsSync(runDir(home, 'r1'))).toBe(false);
+  });
+
   test("commits as the owner does, and takes no other of the owner's config", () => {
     const { owner, home, base } = setup();
     git(owner, 'config', 'core.hooksPath', '/elsewhere');

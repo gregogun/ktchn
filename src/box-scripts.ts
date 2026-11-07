@@ -45,10 +45,10 @@ export const seedScript = (opts: {
     `find ${COPY_PATH} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`,
     'cat > /tmp/seed.bundle',
     `${SAFE_GIT} init -q ${COPY_PATH}`,
-    `${SAFE_GIT} fetch -q /tmp/seed.bundle ${opts.ref}`,
+    `${SAFE_GIT} fetch -q /tmp/seed.bundle --end-of-options ${opts.ref}`,
     opts.branch === undefined
-      ? `${SAFE_GIT} checkout -q --detach FETCH_HEAD`
-      : `${SAFE_GIT} checkout -q -B ${opts.branch} FETCH_HEAD`,
+      ? `${SAFE_GIT} checkout -q --detach FETCH_HEAD --`
+      : `${SAFE_GIT} checkout -q -B ${opts.branch} FETCH_HEAD --`,
     ...opts.identity.map(
       ([key, value]) => `${SAFE_GIT} config ${key} ${quote(value)}`
     ),
