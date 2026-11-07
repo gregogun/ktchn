@@ -148,24 +148,30 @@ describe('isAncestor', () => {
 });
 
 describe('checkRefName', () => {
+  const gitAccepts = (name: string) =>
+    tryGit(tmpdir(), ['check-ref-format', '--allow-onelevel', name]) !==
+    undefined;
+
   test.each(['ktchn/abc123', 'refs/heads/ktchn/abc123', 'refs/ktchn/review'])(
-    'accepts %s',
+    'accepts %s, as git does',
     (name) => {
       expect(() => checkRefName(name)).not.toThrow();
+      expect(gitAccepts(name)).toBe(true);
     }
   );
 
-  test.each([
-    '-x',
-    '--upload-pack=touch',
-    'a..b',
-    'refs/heads/a.lock',
-    'a//b',
-    'a/',
-    'a;b',
-    'a b',
-    '',
-  ])('refuses %j', (name) => {
-    expect(() => checkRefName(name)).toThrow(/Not a ref name/);
-  });
+  test.each(['a..b', 'refs/heads/a.lock', 'a//b', 'a/', '/a', 'a.', 'a/.b'])(
+    'refuses %j, as git does',
+    (name) => {
+      expect(() => checkRefName(name)).toThrow(/Not a ref name/);
+      expect(gitAccepts(name)).toBe(false);
+    }
+  );
+
+  test.each(['-x', '--upload-pack=touch', 'a;b', 'a b', "a'b", ''])(
+    'refuses %j, which would be read as an option or need quoting',
+    (name) => {
+      expect(() => checkRefName(name)).toThrow(/Not a ref name/);
+    }
+  );
 });

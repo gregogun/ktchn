@@ -77,15 +77,19 @@ export const tryGit = (
 export const OID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
 
 // The one rule for a branch or ref name ktchn passes to git, on the host or
-// in a sandbox's shell: characters that need no quoting, no leading `-` that
-// git would read as an option, and nothing `git check-ref-format` refuses
-// (which includes `..`).
-const REF_CHARS = /^[A-Za-z0-9._/][A-Za-z0-9._/-]*$/;
+// in a sandbox's shell: only characters that need no quoting, no leading `-`
+// that git would read as an option, and, of what `git check-ref-format`
+// refuses, everything those characters can still spell: `..`, `//`, a leading
+// or trailing `/`, a trailing `.`, and a component that starts with `.` or
+// ends with `.lock`.
+const REF_CHARS = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 export const checkRefName = (name: string) => {
+  const parts = name.split('/');
   if (
     !REF_CHARS.test(name) ||
-    tryGit(tmpdir(), ['check-ref-format', '--allow-onelevel', name]) ===
-      undefined
+    name.includes('..') ||
+    name.endsWith('.') ||
+    parts.some((p) => p === '' || p.startsWith('.') || p.endsWith('.lock'))
   ) {
     throw new Error(`Not a ref name: ${JSON.stringify(name.slice(0, 200))}`);
   }
