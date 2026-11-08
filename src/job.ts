@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Job } from './ledger.ts';
 
-// The same job names the same run, so running it again resumes it.
 export const makeJob = (
   spec: Omit<Job, 'branch'>
 ): { runId: string; job: Job } => {

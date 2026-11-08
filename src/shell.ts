@@ -13,7 +13,6 @@ import {
 } from './sandbox.ts';
 import type { RunState } from './run-machine.ts';
 
-// The sandbox operations a run uses, so a test can stand in a recording fake.
 export type SandboxPort = {
   open: typeof openSandbox;
   removeAll: typeof removeSandboxes;
@@ -35,16 +34,11 @@ export type AgentSession = {
   close: () => Promise<void>;
 };
 
-// Wires a run's effects to the real sandbox and review. The agent is the one
-// part passed in, so a run can be driven by a scripted agent with no model.
-// Each round gets its own sandbox over the run's volume. The host reads only
-// the run's trusted clone, never the sandbox (ADR 0015).
 export const buildShell = (opts: {
   home: string;
   runId: string;
   job: Job;
   image: string;
-  // The commit the run started from, as the ledger recorded it.
   base: string;
   openAgent: (sandbox: Sandbox) => Promise<AgentSession>;
   report: (state: RunState) => void;
@@ -53,7 +47,6 @@ export const buildShell = (opts: {
   const { job, runId } = opts;
   const sandboxes = opts.sandboxes ?? realSandboxes;
   let clone: string | undefined;
-  // A number is an agent round. Collect has a sandbox of its own.
   let open: { sandbox: Sandbox; round: number | 'collect' } | undefined;
   let agent: AgentSession | undefined;
   const theClone = () =>
@@ -81,10 +74,7 @@ export const buildShell = (opts: {
     const withAgent = number !== 'collect';
     if (withAgent && open?.round === number) return;
     await closeRound();
-    // A driver that was killed left its containers running on the volume.
     sandboxes.removeAll(runId, false);
-    // The clone comes first: a volume made before it would have nothing that
-    // names it if the clone failed.
     const source = theClone();
     const sandbox = await sandboxes.open({
       runId,
@@ -114,11 +104,6 @@ export const buildShell = (opts: {
       await openRound(request.number);
       return (agent as AgentSession).run(request);
     },
-    // The agent's session and sandbox are closed first, so nothing the agent
-    // left running can change the copy while it is read. The round's data
-    // leaves through a collect sandbox over the same volume, which is then
-    // removed and the volume kept. Review judges one commit, resolved once,
-    // from the trusted clone.
     runReview: async () => {
       let collected;
       try {
@@ -151,8 +136,6 @@ export const buildShell = (opts: {
       });
     },
     closeSandbox: closeRound,
-    // Once the owner has the commit the sandbox's copy is no longer needed.
-    // The clone stays until a PR is opened from it.
     handOff: (oid) => {
       handOff({
         owner: job.repo,
@@ -165,7 +148,6 @@ export const buildShell = (opts: {
     },
     discard: async () => {
       await closeRound();
-      // The run is over either way, and the next start sweeps what is left.
       try {
         sandboxes.removeAll(runId, true);
         removeRun(opts.home, runId);

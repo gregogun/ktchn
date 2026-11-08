@@ -67,7 +67,6 @@ if (!lease.held) {
   ledger.close();
   process.exit(1);
 }
-// Read before any sandbox opens, and removed from the environment as it is read.
 const apiKey = readOpenRouterKey();
 
 const startHead = git(job.repo, ['rev-parse', '--verify', 'HEAD^{commit}'], {

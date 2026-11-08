@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * Materializes the currently-staged git index into a temporary directory and
- * runs `gitleaks dir` against it. This is more reliable than asking Gitleaks
- * to operate on the staged state directly, because the behaviour of the
- * various staged-file flags has drifted between releases for newly added
- * files. Copying the exact index contents gives the scanner unambiguous
- * input.
- *
- * Intended to be invoked by `lefthook`'s `pre-commit` `secrets` command as a
- * final secret-scan gate. Exits zero when the scan is clean and non-zero when
- * Gitleaks reports findings.
- */
 import { execSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -39,6 +27,10 @@ const listStagedFiles = (): StagedFile[] => {
     .map((relativePath) => ({ relativePath }));
 };
 
+/* The behaviour of the various staged-file flags has drifted between Gitleaks
+   releases for newly added files, so the exact index contents are copied out
+   and scanned as a directory.
+*/
 const copyStagedFileInto = (snapshotRoot: string, file: StagedFile): void => {
   const destination = path.join(snapshotRoot, file.relativePath);
   mkdirSync(path.dirname(destination), { recursive: true });
@@ -49,7 +41,7 @@ const copyStagedFileInto = (snapshotRoot: string, file: StagedFile): void => {
     });
     writeFileSync(destination, content);
   } catch {
-    // File may have been deleted between listing and showing; skip it.
+    // Nothing to copy.
   }
 };
 

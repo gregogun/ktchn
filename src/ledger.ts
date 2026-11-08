@@ -8,8 +8,6 @@ import {
   type RunState,
 } from './run-machine.ts';
 
-// What a job lets its sandbox do. The agent's sandbox has no network unless
-// the job says so; review's never has one (ADR 0015).
 export type Policy = { network: boolean };
 
 export type Job = {
@@ -46,8 +44,6 @@ export type LedgerRecord =
 
 export type FreshAgentInput = Exclude<AgentInput, { kind: 'resume' }>;
 
-// The newest input the agent was given, numbered among all fresh inputs. A
-// crash resume carries on this same request rather than making a new one.
 export type AgentRequest = { input: FreshAgentInput; number: number };
 
 type Replay = {
@@ -131,15 +127,12 @@ export const openLedger = (path: string) => {
 
   return {
     records,
-    // `base` is the commit the run starts from. A resume keeps the first one.
     startRun: (runId: string, job: Job, base: string) =>
       append(runId, 'run', { kind: 'run_started', job, base }),
     base: (runId: string) =>
       records(runId).find((r) => r.kind === 'run_started')?.base,
     job: (runId: string) =>
       records(runId).find((r) => r.kind === 'run_started')?.job,
-    // `at` is how many events the caller decided from, so a repeat of the
-    // same decision after a crash lands on the same key and is ignored.
     appendEvent: (runId: string, at: number, event: RunEvent) =>
       append(runId, `event:${at}`, { kind: 'run_event', event }),
     recordModelCall: (runId: string, call: ModelCall) =>
@@ -149,8 +142,6 @@ export const openLedger = (path: string) => {
       at: number,
       results: readonly CheckResult[]
     ) => append(runId, `checks:${at}`, { kind: 'checks_ran', results }),
-    // One driver per run: the lease names the process carrying the run out.
-    // A lease whose process is gone is taken over.
     acquireLease: (
       runId: string,
       pid: number = process.pid,

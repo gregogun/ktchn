@@ -25,8 +25,6 @@ import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 
 const image = process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
 
-// A logging git first on PATH. Every git the host runs in this process, and
-// in the children it starts, is recorded with its directory and arguments.
 const shimDir = mkdtempSync(join(tmpdir(), 'ktchn-shim-'));
 const gitLog = join(shimDir, 'git.log');
 const realGit = execFileSync('sh', ['-c', 'command -v git'], {
@@ -155,7 +153,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   return failed.findings;
 };
 
-// (a)
 {
   header('(a) edits package.json scripts and leaves a junk dir untracked');
   const w = world('(a)');
@@ -183,7 +180,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (b)
 {
   header('(b) a clean agent passes; only the run branch reaches the owner');
   const w = world('(b)', {
@@ -244,7 +240,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (c)
 {
   header('(c) an agent wrecks the repository in its sandbox');
   const w = world('(c)');
@@ -274,7 +269,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (d)
 {
   header('(d) an owner commit to main during the round is kept');
   const w = world('(d)');
@@ -301,7 +295,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (u)
 {
   header('(u) uncommitted work is a finding, then committed and passed');
   const w = world('(u)');
@@ -327,7 +320,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (e)
 {
   header(
     '(e) a real SIGKILL of the driver mid-round, with a commit and uncommitted work, then resume'
@@ -402,7 +394,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (f)
 {
   header(
     '(f) a run driven to a terminal state loses its directory, volume and containers'
@@ -433,7 +424,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   w.cleanup();
 }
 
-// (g)
 {
   header('(g) a second start while the first is alive refuses');
   const home = mkdtempSync(join(tmpdir(), 'ktchn-home-'));
@@ -468,7 +458,6 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   rmSync(repo, { recursive: true, force: true });
 }
 
-// A benign fetch of a public page that succeeds only with a network.
 const FETCH =
   'node -e "fetch(\'https://example.com\',{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0),()=>process.exit(1))"';
 const inspect = (name: string, format: string) =>
@@ -476,7 +465,6 @@ const inspect = (name: string, format: string) =>
     encoding: 'utf8',
   }).trim();
 
-// (h)
 {
   header('(h) a command printing without end is cut off, and the round fails');
   const w = world('(h)');
@@ -497,7 +485,6 @@ const inspect = (name: string, format: string) =>
   w.cleanup();
 }
 
-// (i)
 {
   header('(i) a command that never returns is killed at its timeout');
   const w = world('(i)');
@@ -536,7 +523,6 @@ const inspect = (name: string, format: string) =>
   w.cleanup();
 }
 
-// (j)
 {
   header('(j) a commit that is not a descendant of the base is refused');
   const w = world('(j)');
@@ -561,7 +547,6 @@ const inspect = (name: string, format: string) =>
   w.cleanup();
 }
 
-// (k)
 {
   header('(k) the network is off by default, and review never has one');
   const w = world('(k)', { checks: [`! ${FETCH}`] });
@@ -596,7 +581,6 @@ const inspect = (name: string, format: string) =>
   w.cleanup();
 }
 
-// (l)
 {
   header(
     '(l) a job started with the network has it, and review still does not'
@@ -623,11 +607,8 @@ const inspect = (name: string, format: string) =>
   w.cleanup();
 }
 
-// (m)
 {
   header('(m) the seed script refuses to delete outside a ktchn sandbox');
-  // A container from a plain node image: no sentinel file, no mounts and no
-  // network. The script is only ever run inside it.
   const script = seedScript({
     ref: 'refs/heads/x',
     branch: 'x',
@@ -646,8 +627,6 @@ const inspect = (name: string, format: string) =>
   console.log('  no sentinel:', plain.stdout.trim().replace(/\n/g, ' | '));
   assert.match(plain.stdout, /exit=97/);
   assert.match(plain.stdout, /keep\.txt/);
-  // The right directory is not enough, and neither is a wrong directory
-  // with the sentinel.
   const elsewhere = spawnSync(
     'docker',
     [
@@ -668,7 +647,6 @@ const inspect = (name: string, format: string) =>
   assert.match(elsewhere.stdout, /keep\.txt/);
 }
 
-// (n)
 {
   header('(n) a volume with no run directory is swept by its label');
   const home = mkdtempSync(join(tmpdir(), 'ktchn-home-'));
@@ -692,14 +670,13 @@ const inspect = (name: string, format: string) =>
   rmSync(home, { recursive: true, force: true });
 }
 
-// The invariant. Nothing the host ran git on was ever inside a sandbox.
 {
   header('invariant: no host git call targets anything that was in a sandbox');
   const calls = readFileSync(gitLog, 'utf8').split('\n').filter(Boolean);
   const allowed = (dir: string) =>
-    /\/ktchn-proof-[^/]+(\/|$)/.test(dir) || // an owner's project
-    /\/ktchn-home-[^/]+\/runs\/[^/]+(\/repo(\.partial)?)?(\/|$)/.test(dir) || // a trusted run clone
-    /\/ktchn-(pack|seed)-[^/]+(\/|$)/.test(dir); // scratch ktchn made
+    /\/ktchn-proof-[^/]+(\/|$)/.test(dir) ||
+    /\/ktchn-home-[^/]+\/runs\/[^/]+(\/repo(\.partial)?)?(\/|$)/.test(dir) ||
+    /\/ktchn-(pack|seed)-[^/]+(\/|$)/.test(dir);
   let checked = 0;
   for (const line of calls) {
     const [dir = '', args = ''] = line.split('\t');

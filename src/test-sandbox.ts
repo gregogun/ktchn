@@ -6,15 +6,11 @@ import type { ExecResult } from './bounded.ts';
 import type { ExecOptions, Sandbox } from './sandbox.ts';
 
 export type Reply = Partial<ExecResult> & {
-  // Bytes to put in `opts.stdoutFile`, as if the command had printed them.
   file?: Buffer;
 };
 
 export type Call = { command: string; opts: ExecOptions };
 
-// A sandbox for tests that never runs anything. It records each command and
-// answers from `respond`. The only thing it writes is the file a caller asked
-// stdout to go to, inside the temporary directory.
 export const fakeSandbox = (
   respond: (call: Call) => Reply | Promise<Reply> = () => ({})
 ) => {

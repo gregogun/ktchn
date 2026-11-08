@@ -23,10 +23,6 @@ export const reviewOutcome = (
   };
 };
 
-// Checks run inside a sandbox, never on the host (ADR 0012).
-// A check that runs past `timeoutMs` or prints past the sandbox's output limit
-// is killed and fails with a note saying so, and only the tail of its output
-// is kept, so no check can stall review or fill the ledger.
 export const runChecks = async (
   sandbox: Sandbox,
   checks: readonly string[],
@@ -54,10 +50,6 @@ export const runChecks = async (
   return reviewOutcome(results, oid);
 };
 
-// Review of a finished round. The host looks at the commit first; only a
-// commit that passes that is checked, in a sandbox built from the commit alone.
-// `oid` and `base` are fixed by the caller, so the branch moving mid-review
-// cannot change what is judged.
 export const reviewRun = async (opts: {
   runId: string;
   repo: string;

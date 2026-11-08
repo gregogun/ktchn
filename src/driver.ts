@@ -15,20 +15,14 @@ export type ReviewOutcome = {
 };
 
 export type RunShell = {
-  // A crash resume is given the request it carries on, so the agent session
-  // can find the one it already has.
   runAgent: (request: AgentRequest) => Promise<AgentOutcome>;
   runReview: () => Promise<ReviewOutcome>;
   closeSandbox: () => Promise<void>;
-  // The reviewed commit goes to the owner. Safe to repeat.
   handOff: (oid: string) => void;
-  // Deletes what the run left on disk. Only called once it cannot resume.
   discard: () => Promise<void>;
   report: (state: RunState) => void;
 };
 
-// Another driver appending to the same run is the only way an append at this
-// position is refused, so carrying on would run the run twice.
 const append = (ledger: Ledger, runId: string, at: number, event: RunEvent) => {
   if (!ledger.appendEvent(runId, at, event)) {
     throw new Error(
@@ -43,9 +37,6 @@ export const driveRun = async (
   shell: RunShell
 ): Promise<RunState> => {
   let run = ledger.replay(runId);
-  // A run found mid-flight when the driver starts lost the process that was
-  // carrying it out. Opening the PR is not carried out yet, so a run waiting
-  // at that step was not cut off.
   if (
     run.state.status === 'running' ||
     (run.state.status === 'in_review' && run.state.step === 'reviewing')

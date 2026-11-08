@@ -4,9 +4,6 @@ import { driveRun } from '../src/driver.ts';
 import { openLedger, type Job } from '../src/ledger.ts';
 import { buildShell } from '../src/shell.ts';
 
-// A driver process for the proof of a real kill: it takes the lease, opens
-// the agent's sandbox, makes a commit and leaves a file uncommitted, says it
-// is mid-round and waits for the proof to kill it.
 const { home, runId, job, image, base, ready } = JSON.parse(
   process.argv[2] ?? '{}'
 ) as {

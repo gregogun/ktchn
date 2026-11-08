@@ -7,9 +7,6 @@ export type ExecResult = {
   exitCode: number;
   stdout: string;
   stderr: string;
-  // Set when ktchn killed the command for running over a limit. The exit code
-  // is then 124 for a timeout and 125 for output, and what was read so far is
-  // kept.
   limit?: Limit;
 };
 
@@ -21,20 +18,12 @@ export type BoundedRun = {
   file: string;
   args: readonly string[];
   stdin?: string | number;
-  // Writes stdout to this file, counted against `maxBytes`, instead of
-  // keeping it in memory.
   stdoutFile?: string;
-  // Most bytes kept from each stream, or written to `stdoutFile`.
   maxBytes: number;
   timeoutMs: number;
-  // Runs after the process is killed, to stop whatever it left behind. The
-  // result waits for it, so nothing it kills is a later command.
   onKill?: () => Promise<void>;
 };
 
-// Runs a process that may print without end or never exit. Output past
-// `maxBytes` or time past `timeoutMs` kills it and says which, so a caller
-// never buffers or waits without a bound.
 export const runBounded = (run: BoundedRun): Promise<ExecResult> =>
   new Promise((resolve) => {
     const { stdin, stdoutFile, maxBytes } = run;
