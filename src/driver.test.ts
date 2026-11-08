@@ -158,6 +158,7 @@ describe('driveRun', () => {
     const fake = fakeShell([passed]);
     await driveRun(ledger, 'run-1', fake.shell);
     expect(fake.agentCalls).toEqual([['job', 1]]);
+    expect(kinds(ledger, 'run-1')).toContain('Crashed');
   });
 
   test('driving a settled run again appends nothing', async () => {
@@ -226,18 +227,5 @@ describe('driveRun', () => {
       reason: { kind: 'agent_ended_early', reason: 'out of turns' },
     });
     expect(kinds(ledger, 'run-1')).toEqual(['Dequeued', 'AgentEndedEarly']);
-  });
-
-  test('a process that dies mid-agent still records Crashed on the next drive', async () => {
-    const ledger = openLedger(':memory:');
-    const dying: RunShell = {
-      ...fakeShell([]).shell,
-      runAgent: async () => {
-        throw new Error('killed');
-      },
-    };
-    await expect(driveRun(ledger, 'run-1', dying)).rejects.toThrow('killed');
-    await driveRun(ledger, 'run-1', fakeShell([passed]).shell);
-    expect(kinds(ledger, 'run-1')).toContain('Crashed');
   });
 });

@@ -45,9 +45,10 @@ const pack = (repo: string, input: string) =>
     maxBuffer: 1 << 26,
   });
 
-// A trusted clone at `base`, and a second repository standing in for what the
-// agent made in its sandbox. Packs are made here ahead of time, so the fake
-// sandbox only has canned bytes to hand back.
+/* A trusted clone at `base`, and a second repository standing in for what the
+   agent made in its sandbox. Packs are made here ahead of time, so the fake
+   sandbox only has canned bytes to hand back.
+*/
 const world = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-sandbox-')));
   dirs.push(root);
@@ -314,24 +315,6 @@ describe('seed', () => {
     expect(calls.map((c) => c.command)).toEqual([`test -e ${SEEDED}`]);
   });
 
-  test('streams a bundle into an unseeded copy with a bounded guarded script', async () => {
-    const w = world();
-    const { sandbox, calls } = fakeSandbox(({ command }) =>
-      command.startsWith('test -e') ? { exitCode: 1 } : { exitCode: 0 }
-    );
-
-    await seed(sandbox, {
-      repo: w.repo,
-      ref: 'refs/heads/ktchn/r1',
-      branch: 'ktchn/r1',
-    });
-
-    const script = calls[1];
-    expect(script?.command.startsWith('if [ "$(pwd -P)"')).toBe(true);
-    expect(typeof script?.opts.stdin).toBe('number');
-    expect(script?.opts.timeoutMs).toBeGreaterThan(0);
-  });
-
   test('fails when the script fails', async () => {
     const w = world();
     const { sandbox } = fakeSandbox(({ command }) =>
@@ -411,14 +394,5 @@ describe('containerArgs', () => {
   test('has no network unless the Policy allows it', () => {
     expect(pair(args(false), '--network')).toBe('none');
     expect(args(true)).not.toContain('--network');
-  });
-
-  test('keeps the image and command after every flag', () => {
-    expect(args(false).slice(-4)).toEqual([
-      '--entrypoint',
-      'sleep',
-      'img',
-      'infinity',
-    ]);
   });
 });

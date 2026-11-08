@@ -17,8 +17,9 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-// A bare clone with a run branch, and a scratch repository standing in for
-// the agent's copy that its commits are brought in from.
+/* A bare clone with a run branch, and a scratch repository standing in for
+   the agent's copy that its commits are brought in from.
+*/
 const makeRun = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-hr-')));
   dirs.push(root);

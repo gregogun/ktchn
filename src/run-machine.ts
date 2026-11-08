@@ -60,7 +60,6 @@ export type RunState =
 export type RunEvent =
   | { type: 'Dequeued' }
   | { type: 'PrOpened'; pr: string }
-  // The commit review judged, which is the one handed to the owner.
   | { type: 'ReviewPassed'; oid: string }
   | { type: 'ReviewFailed'; findings: string }
   | { type: 'OwnerResumed'; answer: string }
@@ -114,7 +113,6 @@ const REVIEWS_PER_RUN = 3;
 
 const TERMINAL = ['done', 'failed', 'cancelled'];
 
-// A run in one of these states can never be resumed.
 export const isTerminal = (state: RunState) => TERMINAL.includes(state.status);
 
 export const newRun: RunState = {

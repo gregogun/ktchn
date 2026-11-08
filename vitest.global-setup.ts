@@ -39,10 +39,11 @@ const snapshot = () => {
   };
 };
 
-// A test that deletes or rewrites the repository it runs in has failed, however
-// green it looks. This records HEAD, the tracked files, their contents and the
-// working tree status before the suite, and fails the run if any moved once it
-// ends.
+/* A test that deletes or rewrites the repository it runs in has failed, however
+   green it looks. This records HEAD, the tracked files, their contents and the
+   working tree status before the suite, and fails the run if any moved once it
+   ends.
+*/
 export default function setup() {
   const before = snapshot();
   return () => {

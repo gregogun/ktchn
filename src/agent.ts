@@ -16,8 +16,6 @@ import { COPY_PATH } from './box-scripts.ts';
 export const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash-0731';
 const MAX_TURNS = 40;
 
-// Takes the key out of the process environment as it reads it, so nothing
-// that copies the environment later can carry it into a sandbox.
 export const readOpenRouterKey = (): string => {
   const fromEnv = process.env.OPENROUTER_API_KEY;
   delete process.env.OPENROUTER_API_KEY;
@@ -111,7 +109,6 @@ export const openAgent = async (opts: {
       maxTurns: MAX_TURNS,
     },
   });
-  // Carries on whatever the previous process left running.
   harness.resume();
 
   const modelCalls = async () => {

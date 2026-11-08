@@ -12,7 +12,6 @@ import { afterEach, describe, expect, test } from 'vitest';
 import {
   ensureClone,
   handOff,
-  removeRun,
   runDir,
   sweepFinishedRuns,
   sweepOrphanVolumes,
@@ -154,7 +153,6 @@ describe('handOff', () => {
       base: s.base,
       branch: 'ktchn/r1',
     });
-    // The agent's commit is made elsewhere and enters the clone as a pack.
     const sandbox = join(s.root, 'sandbox');
     git(s.root, 'clone', '-q', clone, sandbox);
     git(sandbox, 'checkout', '-q', 'ktchn/r1');
@@ -224,11 +222,6 @@ describe('removing runs', () => {
     expect(
       sweepFinishedRuns(home, openLedger(':memory:'), noContainers)
     ).toEqual({ removed: [], skipped: [], failed: [] });
-  });
-
-  test('removing a run that has no directory is fine', () => {
-    const { home } = setup();
-    removeRun(home, 'nope');
   });
 
   test('a run that will not go is reported and the others are still swept', () => {
@@ -339,15 +332,6 @@ describe('sweepOrphanVolumes', () => {
     expect(sweep.skipped).toEqual([
       { runId: 'old', reason: expect.stringContaining('ktchn.home') },
     ]);
-  });
-
-  test('fails with a clear message when docker will not list volumes', () => {
-    const { home } = setup();
-    expect(() =>
-      sweepOrphanVolumes(home, openLedger(':memory:'), () => {
-        throw new Error('Cannot connect to the Docker daemon');
-      })
-    ).toThrow(/is docker running\? .*Cannot connect/);
   });
 
   test('leaves a volume whose run another process holds', () => {

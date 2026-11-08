@@ -30,8 +30,6 @@ const LABEL = 'ktchn.run';
 const HOME_LABEL = 'ktchn.home';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
-// Runs "$1" as the leader of its own process group, whose id it first writes
-// to the file "$0". Timing the command out kills that group.
 const GROUPED = `exec setsid -w sh -c 'echo $$ >"$0"; exec sh -c "$1"' "$0" "$1"`;
 const KILL_GROUP = 'kill -s KILL -- -"$(cat "$0")"; rm -f "$0"';
 
@@ -45,25 +43,16 @@ export const MEMORY_LIMIT = '2g';
 
 export type ExecOptions = {
   stdin?: string | number;
-  // Writes stdout to this file instead of returning it.
   stdoutFile?: string;
-  // Most bytes kept from stdout and from stderr, or written to `stdoutFile`.
   maxBytes?: number;
   timeoutMs?: number;
 };
 
-// The box stopped a command or the host did, so what the sandbox said cannot
-// be trusted to be whole. It is a finding for the agent, not a crash of ktchn.
 export class CollectRefused extends Error {}
 
-// A sandbox is a container whose files exist only inside docker. The host
-// copies code in and data out, and never mounts or reads what the agent
-// wrote there (ADR 0015).
 export type Sandbox = {
   name: string;
   env: RemoteExecutionEnv | undefined;
-  // Every command is bounded: it is killed when it outruns `timeoutMs` or
-  // prints more than `maxBytes`, and the result says which (`limit`).
   exec: (command: string, opts?: ExecOptions) => Promise<ExecResult>;
   close: () => Promise<void>;
 };
@@ -72,9 +61,6 @@ export const sandboxName = (runId: string, round: number) =>
   `ktchn-${runId}-r${round}`;
 const volumeName = (runId: string) => `ktchn-${runId}`;
 
-// A docker call that outruns this is killed, so a wedged daemon fails the
-// run instead of hanging ktchn. Every call here is a container or volume
-// operation on a local image.
 const DOCKER_TIMEOUT_MS = 5 * 60_000;
 
 const docker = (args: readonly string[]) =>
@@ -84,8 +70,6 @@ const docker = (args: readonly string[]) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 
-// What every container ktchn runs is limited by: no capabilities, no new
-// privileges, a cap on processes, and a cap on memory with no swap beyond it.
 const LIMITS = [
   '--cap-drop',
   'ALL',
@@ -99,8 +83,6 @@ const LIMITS = [
   MEMORY_LIMIT,
 ];
 
-// What every sandbox container is run with. The network is a Policy of the
-// job: `--network none` unless the job allows it (ADR 0015).
 export const containerArgs = (opts: {
   name: string;
   runId: string;
@@ -126,8 +108,9 @@ export const containerArgs = (opts: {
   'infinity',
 ];
 
-// A new volume belongs to root. This hands it to the sandbox's user, as root
-// with only CHOWN.
+/* A new volume belongs to root. This hands it to the sandbox's user, as root
+   with only CHOWN.
+*/
 export const chownArgs = (volume: string, image: string) => [
   'run',
   '--rm',
@@ -158,7 +141,6 @@ const piEnvBinDir = () =>
 const volumeExists = (volume: string) =>
   docker(['volume', 'ls', '-q', '--filter', `name=^${volume}$`]) !== '';
 
-// Every volume ktchn made, by label, whether or not its run is still known.
 export const listVolumes = (): {
   runId: string;
   volume: string;
@@ -179,9 +161,6 @@ export const listVolumes = (): {
       return { runId, volume, home };
     });
 
-// Removes every container of a run, and with `withVolume` its volume too.
-// A crashed driver leaves its containers behind, so a resume and the sweep of
-// finished runs both call this.
 export const removeSandboxes = (runId: string, withVolume: boolean) => {
   const ids = docker([
     'ps',
@@ -194,18 +173,13 @@ export const removeSandboxes = (runId: string, withVolume: boolean) => {
   if (withVolume) docker(['volume', 'rm', '-f', volumeName(runId)]);
 };
 
-// With a volume the sandbox's copy outlives its container, so a run that
-// crashes carries on from what its agent had written (ADR 0015).
 export const openSandbox = async (opts: {
   runId: string;
   name: string;
   image: string;
   volume: boolean;
-  // The ktchn home the run belongs to. A volume is labelled with it so one
-  // home's sweep never removes another's.
   home?: string;
   piEnv: boolean;
-  // The job's Policy. A sandbox with no network cannot fetch anything.
   network: boolean;
 }): Promise<Sandbox> => {
   const { runId, name } = opts;
@@ -218,7 +192,7 @@ export const openSandbox = async (opts: {
     try {
       docker(['volume', 'rm', '-f', volume]);
     } catch {
-      // Already gone, or the sweep by label finds it.
+      // Already gone.
     }
   };
   let made = false;
@@ -251,7 +225,6 @@ export const openSandbox = async (opts: {
       })
     );
   } catch (error) {
-    // A volume made by this call has no run directory to sweep it with yet.
     if (made && !volumeExisted) forgetVolume();
     throw error;
   }
@@ -306,9 +279,10 @@ export const openSandbox = async (opts: {
         stdoutFile: io.stdoutFile,
         maxBytes: io.maxBytes ?? MAX_OUTPUT_BYTES,
         timeoutMs: io.timeoutMs ?? EXEC_TIMEOUT_MS,
-        // Killing the docker client leaves its command running in the
-        // container, so the command's own process group is killed too, and
-        // nothing else (the pi-env daemon is another group).
+        /* Killing the docker client leaves its command running in the
+           container, so the command's own process group is killed too, and
+           nothing else (the pi-env daemon is another group).
+        */
         onKill: () =>
           new Promise<void>((done) => {
             execFile(
@@ -353,9 +327,6 @@ const succeed = (result: ExecResult, what: string) => {
   return result.stdout.trim();
 };
 
-// What the agent left in its copy decides what collect's git says, so a git
-// failure there is a finding for the agent. A sandbox that cannot run `true`
-// either is docker failing, which is not the agent's to repair.
 const answer = async (sandbox: Sandbox, result: ExecResult, what: string) => {
   stopped(result, what);
   if (result.exitCode === 0) return result.stdout.trim();
@@ -370,10 +341,6 @@ const answer = async (sandbox: Sandbox, result: ExecResult, what: string) => {
   );
 };
 
-// Puts one commit and its history into the sandbox's copy, as a bundle
-// streamed in. A copy that already holds a seed is left alone, which is
-// what makes a crashed run's work survive. `branch` names the branch to check
-// out, and without it the commit is checked out detached.
 export const seed = async (
   sandbox: Sandbox,
   opts: { repo: string; ref: string; branch?: string }
@@ -409,9 +376,6 @@ export const seed = async (
   }
 };
 
-// Review's own sandbox: a fresh repository holding the reviewed commit with
-// no volume, no pi-env and no secrets, so checks judge that commit and only
-// that commit.
 export const openReviewSandbox = async (
   opts: {
     runId: string;
@@ -444,15 +408,9 @@ export const openReviewSandbox = async (
 
 export type Collected = {
   oid: string;
-  // `git status --porcelain -z` of the sandbox's copy, empty when it is clean.
   dirty: string;
 };
 
-// The end of a round. Everything the host will ever learn about the agent's
-// work leaves the sandbox here: a commit id, a status listing, and a pack
-// that git checks object by object before the run's branch moves to it. The
-// sandbox's copy itself is never read. The commit must descend from `base`,
-// the commit the run started from.
 export const collect = async (opts: {
   sandbox: Sandbox;
   repo: string;
@@ -500,7 +458,6 @@ export const collect = async (opts: {
           timeoutMs: PACK_MS,
         });
       let sent = await pack(`^${tip}\n`);
-      // A tip the sandbox no longer has means a full pack.
       if (sent.exitCode !== 0 && sent.limit === undefined) {
         sent = await pack('');
       }
@@ -508,8 +465,6 @@ export const collect = async (opts: {
       try {
         importPack(file, repo, oid, { maxBytes: MAX_PACK_BYTES });
       } catch (error) {
-        // Git exiting with a status read the pack and refused it. Anything
-        // else (git missing, killed) is the host's own failure.
         if (typeof (error as { status?: unknown }).status !== 'number') {
           throw error;
         }

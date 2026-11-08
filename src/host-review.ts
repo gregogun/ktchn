@@ -1,7 +1,5 @@
 import { git } from './git.ts';
 
-// Files whose change alters what the checks run or how they judge, so the
-// agent may not touch them unless the job names them with --allow-path.
 const PROTECTED: readonly string[] = [
   '**/package.json',
   '**/pnpm-lock.yaml',
@@ -36,9 +34,10 @@ const PROTECTED: readonly string[] = [
   '.github/workflows/**',
 ];
 
-// node:path's matchesGlob skips dot directories under `**`, so
-// `.config/package.json` would slip past `**/package.json`. This matcher treats
-// every path segment alike.
+/* node:path's matchesGlob skips dot directories under `**`, so
+   `.config/package.json` would slip past the `package.json` pattern. This
+   matcher treats every path segment alike.
+*/
 const globToRegExp = (glob: string): RegExp => {
   let source = '';
   for (let i = 0; i < glob.length; i++) {
@@ -72,15 +71,9 @@ export const protectedChanges = (
 const LISTED = 40;
 const ENTRY_CHARS = 200;
 
-// What review checks on the host before any check runs: the run's branch must
-// hold the agent's whole change, as a commit, touching nothing protected. It
-// reads objects only, from the run's clone. `dirty` is the status the sandbox
-// reported when the round ended (`git status --porcelain -z`).
 export const hostFindings = (opts: {
   repo: string;
   branch: string;
-  // The commit review judges and the commit the run started from, both fixed
-  // by the caller. Nothing here reads a branch or HEAD again.
   oid: string;
   base: string;
   dirty: string;

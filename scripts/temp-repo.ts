@@ -17,7 +17,6 @@ export const makeTempRepo = () => {
   return repo;
 };
 
-// Containers and volumes any ktchn run made.
 export const ktchnLeftovers = () => {
   const docker = (args: string[]) =>
     execFileSync('docker', args, { encoding: 'utf8' })

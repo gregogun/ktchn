@@ -3,17 +3,6 @@ import { closeSync, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// The host runs git only on repositories ktchn alone writes: the owner's
-// project, a run's clone, and scratch directories (ADR 0015). Variables a
-// hook or a parent git left in the environment must not steer it.
-//
-// A run's clone and scratch directories are `trusted`: git there reads no
-// system or user configuration, so nothing but ktchn's own flags and the
-// repository's config decides what it does. The owner's project is `owner`
-// and keeps the owner's own system and user configuration. ktchn needs the
-// owner's identity from it for the agent's commits, and the project is the
-// owner's own code on the owner's own machine, written only by ktchn
-// (ADR 0015). Inherited `GIT_*` variables are dropped for both.
 export type Scope = 'trusted' | 'owner';
 
 const hostEnv = (scope: Scope): Record<string, string> => {
@@ -32,9 +21,6 @@ const hostEnv = (scope: Scope): Record<string, string> => {
   return env;
 };
 
-// A host git call that outruns this is killed. index-pack of a pack at the
-// 256 MiB cap is the slowest call ktchn makes, and this leaves it room on a
-// slow disk. It stops a hostile pack or a stuck repository from hanging ktchn.
 const GIT_TIMEOUT_MS = 10 * 60_000;
 
 export const git = (
@@ -76,12 +62,6 @@ export const tryGit = (
 
 export const OID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
 
-// The one rule for a branch or ref name ktchn passes to git, on the host or
-// in a sandbox's shell: only characters that need no quoting, no leading `-`
-// that git would read as an option, and, of what `git check-ref-format`
-// refuses, everything those characters can still spell: `..`, `//`, a leading
-// or trailing `/`, a trailing `.`, and a component that starts with `.` or
-// ends with `.lock`.
 const REF_CHARS = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 export const checkRefName = (name: string) => {
   const parts = name.split('/');
@@ -99,7 +79,6 @@ const checkOid = (id: string) => {
   if (!OID.test(id)) throw new Error(`Not an object id: ${id}`);
 };
 
-// Whether `ancestor` is reachable from `descendant`, both already in `repo`.
 // Git exits 1 for "no"; any other failure is not an answer and is thrown.
 export const isAncestor = (
   repo: string,
@@ -117,10 +96,6 @@ export const isAncestor = (
   }
 };
 
-// The one way anything an agent wrote enters a repository the host reads:
-// a pack file, which git checks object by object, and then a check that
-// everything `oid` needs is present. Nothing in the pack is ever executed or
-// checked out.
 export const importPack = (
   pack: string,
   repo: string,
@@ -150,10 +125,7 @@ export const importPack = (
   });
 };
 
-// Brings one commit and what it needs from one repository into another as a
-// pack. `excluding` is a commit the destination already has, to send less.
 export const copyCommit = (opts: {
-  // How git treats `to`, which is the owner's project in a handoff.
   toScope?: Scope;
   from: string;
   to: string;
