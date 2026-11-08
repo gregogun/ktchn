@@ -69,7 +69,14 @@ if (!lease.held) {
   ledger.close();
   process.exit(1);
 }
-if (!isTerminal(ledger.replay(runId).state)) {
+const before = ledger.replay(runId).state;
+if (before.status === 'done') {
+  console.log(`run ${runId} is already done: ${before.pr}`);
+  ledger.releaseLease(runId);
+  ledger.close();
+  process.exit(0);
+}
+if (!isTerminal(before)) {
   try {
     checkCanOpenPr(job.repo);
   } catch (error) {
@@ -121,6 +128,13 @@ const { shell, close } = buildShell({
 
 try {
   await driveRun(ledger, runId, shell);
+} catch (error) {
+  const state = ledger.replay(runId).state;
+  if (state.status !== 'in_review' || state.step !== 'opening_pr') throw error;
+  console.error(
+    `run ${runId} passed review but its PR was not opened: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ')}. Run start again to retry.`
+  );
+  process.exitCode = 1;
 } finally {
   await close();
   ledger.releaseLease(runId);

@@ -17,17 +17,31 @@ const gh = (bin: string, cwd: string, args: string[], input?: string) =>
 const stderrOf = (error: unknown) =>
   String((error as { stderr?: unknown }).stderr ?? error).trim();
 
-export const checkCanOpenPr = (repo: string, bin = 'gh') => {
-  if (
-    tryGit(repo, ['remote', 'get-url', 'origin'], { scope: 'owner' }) ===
-    undefined
-  ) {
+const githubRepo = (repo: string) => {
+  const url = tryGit(repo, ['remote', 'get-url', 'origin'], {
+    scope: 'owner',
+  });
+  if (url === undefined) {
     throw new Error(
       `${repo} has no origin, so a run could not open its PR. Add a GitHub origin first.`
     );
   }
+  const match =
+    /^(?:https:\/\/(?:[^/@]+@)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(
+      url
+    );
+  if (match?.[1] === undefined) {
+    throw new Error(
+      `${repo}'s origin (${url}) is not a GitHub URL, so a run could not open its PR.`
+    );
+  }
+  return match[1];
+};
+
+export const checkCanOpenPr = (repo: string, bin = 'gh') => {
+  const slug = githubRepo(repo);
   try {
-    gh(bin, repo, ['repo', 'view', '--json', 'url']);
+    gh(bin, repo, ['repo', 'view', '-R', slug, '--json', 'url']);
   } catch (error) {
     throw new Error(
       `gh cannot reach ${repo}'s GitHub repository, so a run could not open its PR (try \`gh auth login\`): ${stderrOf(error)}`,
@@ -71,25 +85,12 @@ export const openPr = (opts: {
 }) => {
   checkRefName(opts.branch);
   const bin = opts.gh ?? 'gh';
-  const ref = `refs/heads/${opts.branch}`;
-  /* The owner's pre-push hooks would run their tooling over files the agent
-     wrote, which ADR 0015 keeps off the host.
-  */
-  git(
-    opts.repo,
-    [
-      '-c',
-      'core.hooksPath=/dev/null',
-      'push',
-      '--quiet',
-      'origin',
-      `${ref}:${ref}`,
-    ],
-    { scope: 'owner' }
-  );
+  const slug = githubRepo(opts.repo);
   const existing = gh(bin, opts.repo, [
     'pr',
     'list',
+    '-R',
+    slug,
     '--head',
     opts.branch,
     '--state',
@@ -100,12 +101,32 @@ export const openPr = (opts: {
     '.[0].url // empty',
   ]);
   if (existing !== '') return existing;
+  const ref = `refs/heads/${opts.branch}`;
+  /* The owner's pre-push hooks would run their tooling over files the agent
+     wrote, which ADR 0015 keeps off the host. Recursing into submodules would
+     make git read .gitmodules from the agent's commits.
+  */
+  git(
+    opts.repo,
+    [
+      '-c',
+      'core.hooksPath=/dev/null',
+      'push',
+      '--quiet',
+      '--no-recurse-submodules',
+      'origin',
+      `${ref}:${ref}`,
+    ],
+    { scope: 'owner' }
+  );
   const created = gh(
     bin,
     opts.repo,
     [
       'pr',
       'create',
+      '-R',
+      slug,
       '--head',
       opts.branch,
       '--title',

@@ -240,9 +240,18 @@ describe('buildShell', () => {
     const w = world({ network: false });
     const origin = join(w.home, 'origin.git');
     git(w.home, 'init', '-q', '--bare', origin);
-    git(w.repo, 'remote', 'add', 'origin', origin);
+    git(w.repo, 'remote', 'add', 'origin', 'https://github.com/o/r');
+    git(
+      w.repo,
+      'config',
+      `url.${origin}.pushInsteadOf`,
+      'https://github.com/o/r'
+    );
     const gh = join(w.home, 'gh');
-    writeFileSync(gh, '#!/bin/sh\necho https://github.com/o/r/pull/1\n');
+    writeFileSync(
+      gh,
+      '#!/bin/sh\n[ "$2" = list ] || echo https://github.com/o/r/pull/1\n'
+    );
     chmodSync(gh, 0o755);
     const events: string[] = [];
     const { shell } = buildShell({
