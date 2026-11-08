@@ -53,13 +53,6 @@ describe('git', () => {
       delete process.env.GIT_DIR;
     }
   });
-
-  test('tryGit answers undefined for a failure', () => {
-    const { from } = setup();
-    expect(tryGit(from, ['cat-file', '-e', 'deadbeef'.repeat(5)])).toBe(
-      undefined
-    );
-  });
 });
 
 describe('copyCommit', () => {

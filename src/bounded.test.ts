@@ -15,8 +15,6 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-// These start the current node binary with a fixed script that only prints or
-// sleeps, to exercise the bound itself.
 const node = (script: string) => ({
   file: process.execPath,
   args: ['-e', script],

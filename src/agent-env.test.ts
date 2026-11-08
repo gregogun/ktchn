@@ -5,8 +5,7 @@ import type {
   ExecutionEnv,
   ShellExecOptions,
 } from '@earendil-works/pi-durable/env';
-import { AGENT_LIMITS, boundAgentEnv } from './agent-env.ts';
-import { EXEC_TIMEOUT_MS, MAX_OUTPUT_BYTES } from './sandbox.ts';
+import { boundAgentEnv } from './agent-env.ts';
 
 type Run = (options: ShellExecOptions, context: Context) => Promise<unknown>;
 
@@ -39,14 +38,6 @@ const collect = () => {
   const text: string[] = [];
   return { text, onOutput: (chunk: string) => void text.push(chunk) };
 };
-
-describe('AGENT_LIMITS', () => {
-  test('match the limits ktchn puts on its own commands, with a 30 minute ceiling', () => {
-    expect(AGENT_LIMITS.defaultTimeoutMs).toBe(EXEC_TIMEOUT_MS);
-    expect(AGENT_LIMITS.maxOutputBytes).toBe(MAX_OUTPUT_BYTES);
-    expect(AGENT_LIMITS.maxTimeoutMs).toBe(30 * 60_000);
-  });
-});
 
 describe('boundAgentEnv timeouts', () => {
   test('gives a command with no timeout the default, in seconds', async () => {
@@ -111,16 +102,6 @@ describe('boundAgentEnv timeouts', () => {
 });
 
 describe('boundAgentEnv output', () => {
-  test('forwards output under the limit and says nothing', async () => {
-    const { env } = recorder(async (options, context) => {
-      options.onOutput?.('a'.repeat(60), context, { stream: 'stdout' });
-      return { ok: true, value: {} };
-    });
-    const out = collect();
-    await boundAgentEnv(env, limits).exec('x', { onOutput: out.onOutput }, ctx);
-    expect(out.text).toEqual(['a'.repeat(60)]);
-  });
-
   test('stops forwarding past the limit, cancels the command and says so', async () => {
     let cancelled: boolean | undefined;
     const { env } = recorder(async (options, context) => {

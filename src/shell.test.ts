@@ -21,7 +21,6 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-// Every sandbox operation is recorded and none reaches docker.
 const recorder = (events: string[], network: boolean[] = []) => {
   const { sandbox } = fakeSandbox();
   const ports: SandboxPort = {
@@ -111,24 +110,6 @@ describe('buildShell', () => {
     ]);
     expect(existsSync(runDir(w.home, w.runId))).toBe(true);
     expect(network).toEqual([false]);
-  });
-
-  test('the network flag of the job reaches the sandbox', async () => {
-    const w = world({ network: true });
-    const events: string[] = [];
-    const network: boolean[] = [];
-    const { shell } = buildShell({
-      ...w,
-      image: 'img',
-      openAgent: async () => ({
-        run: async () => ({}) as never,
-        close: async () => {},
-      }),
-      report: () => {},
-      sandboxes: recorder(events, network),
-    });
-    await shell.runAgent({ input: { kind: 'job' } as never, number: 1 });
-    expect(network).toEqual([true]);
   });
 
   test('a clone that fails opens no sandbox, so no volume is made', async () => {

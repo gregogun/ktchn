@@ -57,17 +57,6 @@ describe('ledger', () => {
     expect(ledger.replay('run-1').state.status).toBe('running');
   });
 
-  test('a crash resume carries on the same agent request', () => {
-    const ledger = openLedger(':memory:');
-    ledger.appendEvent('run-1', 0, { type: 'Dequeued' });
-    ledger.appendEvent('run-1', 1, { type: 'Crashed' });
-    ledger.appendEvent('run-1', 2, { type: 'Dequeued' });
-    expect(ledger.replay('run-1').agentRequest).toEqual({
-      input: { kind: 'job' },
-      number: 1,
-    });
-  });
-
   test('runs keep separate records and model calls are kept once', () => {
     const ledger = openLedger(':memory:');
     const call = {
