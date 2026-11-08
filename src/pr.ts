@@ -4,10 +4,29 @@ import type { CheckResult, Job } from './ledger.ts';
 
 const GH_TIMEOUT_MS = 2 * 60_000;
 
+/* gh starts its own git processes, which ADR 0015 keeps from inheriting GIT_*,
+   and GH_HOST or GH_REPO would point it at a different repository than the
+   one passed with -R.
+*/
+const ghEnv = () => {
+  const env: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (
+      value !== undefined &&
+      name !== 'GH_HOST' &&
+      name !== 'GH_REPO' &&
+      !name.startsWith('GIT_')
+    ) {
+      env[name] = value;
+    }
+  }
+  return { ...env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' };
+};
+
 const gh = (bin: string, cwd: string, args: string[], input?: string) =>
   execFileSync(bin, args, {
     cwd,
-    env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' },
+    env: ghEnv(),
     input,
     encoding: 'utf8',
     timeout: GH_TIMEOUT_MS,
@@ -18,7 +37,7 @@ const stderrOf = (error: unknown) =>
   String((error as { stderr?: unknown }).stderr ?? error).trim();
 
 const githubRepo = (repo: string) => {
-  const url = tryGit(repo, ['remote', 'get-url', 'origin'], {
+  const url = tryGit(repo, ['remote', 'get-url', '--push', 'origin'], {
     scope: 'owner',
   });
   if (url === undefined) {
@@ -35,7 +54,7 @@ const githubRepo = (repo: string) => {
       `${repo}'s origin (${url}) is not a GitHub URL, so a run could not open its PR.`
     );
   }
-  return match[1];
+  return `github.com/${match[1]}`;
 };
 
 export const checkCanOpenPr = (repo: string, bin = 'gh') => {
@@ -50,6 +69,15 @@ export const checkCanOpenPr = (repo: string, bin = 'gh') => {
   }
 };
 
+const codeSpan = (text: string) => {
+  const longest = Math.max(
+    0,
+    ...(text.match(/`+/g) ?? []).map((run) => run.length)
+  );
+  const fence = '`'.repeat(longest + 1);
+  return `${fence} ${text} ${fence}`;
+};
+
 export const prText = (
   runId: string,
   job: Job,
@@ -61,7 +89,7 @@ export const prText = (
   const checkLines = checks.length
     ? checks.map(
         (c) =>
-          `- \`${c.command}\` ${c.exitCode === 0 ? 'passed' : `exited ${c.exitCode}`}`
+          `- ${codeSpan(c.command)} ${c.exitCode === 0 ? 'passed' : `exited ${c.exitCode}`}`
       )
     : ['- none configured'];
   const body = [
@@ -86,21 +114,22 @@ export const openPr = (opts: {
   checkRefName(opts.branch);
   const bin = opts.gh ?? 'gh';
   const slug = githubRepo(opts.repo);
-  const existing = gh(bin, opts.repo, [
-    'pr',
-    'list',
-    '-R',
-    slug,
-    '--head',
-    opts.branch,
-    '--state',
-    'all',
-    '--json',
-    'url',
-    '--jq',
-    '.[0].url // empty',
-  ]);
-  if (existing !== '') return existing;
+  const listed = JSON.parse(
+    gh(bin, opts.repo, [
+      'pr',
+      'list',
+      '-R',
+      slug,
+      '--head',
+      opts.branch,
+      '--state',
+      'all',
+      '--json',
+      'url,isCrossRepository',
+    ])
+  ) as { url: string; isCrossRepository: boolean }[];
+  const existing = listed.find((pr) => !pr.isCrossRepository);
+  if (existing !== undefined) return existing.url;
   const ref = `refs/heads/${opts.branch}`;
   /* The owner's pre-push hooks would run their tooling over files the agent
      wrote, which ADR 0015 keeps off the host. Recursing into submodules would
