@@ -60,7 +60,7 @@ const githubRepo = (repo: string) => {
 export const checkCanOpenPr = (repo: string, bin = 'gh') => {
   const slug = githubRepo(repo);
   try {
-    gh(bin, repo, ['repo', 'view', '-R', slug, '--json', 'url']);
+    gh(bin, repo, ['repo', 'view', slug, '--json', 'url']);
   } catch (error) {
     throw new Error(
       `gh cannot reach ${repo}'s GitHub repository, so a run could not open its PR (try \`gh auth login\`): ${stderrOf(error)}`,
@@ -77,7 +77,7 @@ export const originBase = (repo: string, bin = 'gh') => {
   const slug = githubRepo(repo);
   const name = (
     JSON.parse(
-      gh(bin, repo, ['repo', 'view', '-R', slug, '--json', 'defaultBranchRef'])
+      gh(bin, repo, ['repo', 'view', slug, '--json', 'defaultBranchRef'])
     ) as { defaultBranchRef?: { name?: string } | null }
   ).defaultBranchRef?.name;
   if (name === undefined) {

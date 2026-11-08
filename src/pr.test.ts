@@ -30,7 +30,11 @@ const fakeGh = (root: string) => {
 dir="${root}"
 echo "$*" >> "$dir/gh.log"
 env | grep -E '^(GH_HOST|GH_REPO|GIT_)' >> "$dir/gh.env"
-case "$*" in *"-R github.com/"*) ;; *) echo "missing -R github.com/<slug>" >&2; exit 1 ;; esac
+case "$1 $2" in
+  "repo view") case "$3" in github.com/*/*) ;; *) echo "repo view needs github.com/<slug> as its first argument" >&2; exit 1 ;; esac
+    case "$*" in *" -R"*) echo "unknown shorthand flag: 'R' in -R" >&2; exit 1 ;; esac ;;
+  "pr create"|"pr list") case "$*" in *"-R github.com/"*) ;; *) echo "missing -R github.com/<slug>" >&2; exit 1 ;; esac ;;
+esac
 case "$1 $2" in
   "pr create"|"pr list") case "$*" in *"--head ktchn/r1"*) ;; *) echo "missing --head" >&2; exit 1 ;; esac ;;
 esac
