@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   realpathSync,
@@ -235,12 +236,19 @@ describe('buildShell', () => {
     expect(events).not.toContain('review');
   });
 
-  test("a handoff removes the run's sandboxes and volume and keeps its clone, and repeats safely", async () => {
+  test("opening the PR hands off the reviewed commit, removes the run's sandboxes and volume, and repeats safely", async () => {
     const w = world({ network: false });
+    const origin = join(w.home, 'origin.git');
+    git(w.home, 'init', '-q', '--bare', origin);
+    git(w.repo, 'remote', 'add', 'origin', origin);
+    const gh = join(w.home, 'gh');
+    writeFileSync(gh, '#!/bin/sh\necho https://github.com/o/r/pull/1\n');
+    chmodSync(gh, 0o755);
     const events: string[] = [];
     const { shell } = buildShell({
       ...w,
       image: 'img',
+      gh,
       openAgent: async () => ({
         run: async () => ({}) as never,
         close: async () => {},
@@ -248,13 +256,17 @@ describe('buildShell', () => {
       report: () => {},
       sandboxes: recorder(events),
     });
-    shell.handOff(w.base);
-    shell.handOff(w.base);
+    expect(await shell.openPr(w.base, [])).toBe(
+      'https://github.com/o/r/pull/1'
+    );
+    expect(await shell.openPr(w.base, [])).toBe(
+      'https://github.com/o/r/pull/1'
+    );
     expect(events).toEqual([
       `remove ${w.runId} true`,
       `remove ${w.runId} true`,
     ]);
     expect(git(w.repo, 'rev-parse', w.job.branch)).toBe(w.base);
-    expect(existsSync(runDir(w.home, w.runId))).toBe(true);
+    expect(git(origin, 'rev-parse', w.job.branch)).toBe(w.base);
   });
 });

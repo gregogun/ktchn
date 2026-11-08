@@ -7,6 +7,8 @@ import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from './agent.ts';
 import { driveRun } from './driver.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
+import { checkCanOpenPr } from './pr.ts';
+import { isTerminal } from './run-machine.ts';
 import { git } from './git.ts';
 import { buildShell } from './shell.ts';
 
@@ -66,6 +68,16 @@ if (!lease.held) {
   );
   ledger.close();
   process.exit(1);
+}
+if (!isTerminal(ledger.replay(runId).state)) {
+  try {
+    checkCanOpenPr(job.repo);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    ledger.releaseLease(runId);
+    ledger.close();
+    process.exit(1);
+  }
 }
 const apiKey = readOpenRouterKey();
 
