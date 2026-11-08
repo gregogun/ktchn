@@ -69,6 +69,43 @@ export const checkCanOpenPr = (repo: string, bin = 'gh') => {
   }
 };
 
+/* The default branch's name comes from GitHub, since origin/HEAD can be stale or
+   missing. Fetching it leaves the owner's branches and working tree alone, so
+   a commit they haven't pushed never becomes a run's base.
+*/
+export const originBase = (repo: string, bin = 'gh') => {
+  const slug = githubRepo(repo);
+  const name = (
+    JSON.parse(
+      gh(bin, repo, ['repo', 'view', '-R', slug, '--json', 'defaultBranchRef'])
+    ) as { defaultBranchRef?: { name?: string } | null }
+  ).defaultBranchRef?.name;
+  if (name === undefined) {
+    throw new Error(`${slug} has no default branch to base a run on.`);
+  }
+  checkRefName(name);
+  git(
+    repo,
+    [
+      '-c',
+      'core.hooksPath=/dev/null',
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      '--no-recurse-submodules',
+      'origin',
+      `refs/heads/${name}`,
+    ],
+    { scope: 'owner' }
+  );
+  return {
+    base: git(repo, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'], {
+      scope: 'owner',
+    }),
+    baseBranch: name,
+  };
+};
+
 const codeSpan = (text: string) => {
   const longest = Math.max(
     0,
@@ -107,11 +144,13 @@ export const prText = (
 export const openPr = (opts: {
   repo: string;
   branch: string;
+  baseBranch: string;
   title: string;
   body: string;
   gh?: string;
 }) => {
   checkRefName(opts.branch);
+  checkRefName(opts.baseBranch);
   const bin = opts.gh ?? 'gh';
   const slug = githubRepo(opts.repo);
   const listed = JSON.parse(
@@ -156,6 +195,8 @@ export const openPr = (opts: {
       'create',
       '-R',
       slug,
+      '--base',
+      opts.baseBranch,
       '--head',
       opts.branch,
       '--title',

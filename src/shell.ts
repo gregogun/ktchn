@@ -41,6 +41,7 @@ export const buildShell = (opts: {
   job: Job;
   image: string;
   base: string;
+  baseBranch: string;
   openAgent: (sandbox: Sandbox) => Promise<AgentSession>;
   report: (state: RunState) => void;
   sandboxes?: SandboxPort;
@@ -150,6 +151,7 @@ export const buildShell = (opts: {
       return openPr({
         repo: job.repo,
         branch: job.branch,
+        baseBranch: opts.baseBranch,
         gh: opts.gh,
         ...prText(runId, job, checks),
       });

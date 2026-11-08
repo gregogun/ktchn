@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { checkCanOpenPr, openPr, prText } from './pr.ts';
+import { checkCanOpenPr, openPr, originBase, prText } from './pr.ts';
 import type { CheckResult, Job } from './ledger.ts';
 import { git } from './test-git.ts';
 
@@ -35,7 +35,10 @@ case "$1 $2" in
   "pr create"|"pr list") case "$*" in *"--head ktchn/r1"*) ;; *) echo "missing --head" >&2; exit 1 ;; esac ;;
 esac
 case "$1 $2" in
-  "repo view") [ -f "$dir/gh.fail" ] && { echo "not logged in" >&2; exit 1; }; echo '{}' ;;
+  "pr create") case "$*" in *"--base main "*) ;; *) echo "missing --base" >&2; exit 1 ;; esac ;;
+esac
+case "$1 $2" in
+  "repo view") [ -f "$dir/gh.fail" ] && { echo "not logged in" >&2; exit 1; }; echo '{"defaultBranchRef":{"name":"main"}}' ;;
   "pr list") if [ -f "$dir/pr.list" ]; then cat "$dir/pr.list"; else echo '[]'; fi ;;
   "pr create") cat > "$dir/pr.body"; echo '[{"url":"${URL}","isCrossRepository":false}]' > "$dir/pr.list"; echo "Creating..."; echo "${URL}" ;;
 esac
@@ -61,7 +64,10 @@ const setup = () => {
 
 const addGithubOrigin = (root: string, repo: string, origin: string) => {
   const ssh = join(root, 'ssh');
-  writeFileSync(ssh, `#!/bin/sh\nexec git receive-pack "${origin}"\n`);
+  writeFileSync(
+    ssh,
+    `#!/bin/sh\ncase "$*" in *upload-pack*) exec git upload-pack "${origin}" ;; *) exec git receive-pack "${origin}" ;; esac\n`
+  );
   chmodSync(ssh, 0o755);
   git(repo, 'remote', 'add', 'origin', 'git@github.com:o/r.git');
   git(repo, 'config', 'core.sshCommand', ssh);
@@ -79,6 +85,7 @@ describe('openPr', () => {
     const pr = {
       repo,
       branch: 'ktchn/r1',
+      baseBranch: 'main',
       title: 'Fix it',
       body: 'the job',
       gh,
@@ -115,7 +122,14 @@ describe('openPr targets', () => {
     vi.stubEnv('GH_REPO', 'x/y');
     vi.stubEnv('GIT_DIR', '/nowhere');
 
-    openPr({ repo, branch: 'ktchn/r1', title: 't', body: 'b', gh });
+    openPr({
+      repo,
+      branch: 'ktchn/r1',
+      baseBranch: 'main',
+      title: 't',
+      body: 'b',
+      gh,
+    });
 
     const log = readFileSync(join(root, 'gh.log'), 'utf8');
     expect(log).toContain('pr list -R github.com/p/q ');
@@ -134,11 +148,37 @@ describe('openPr targets', () => {
     );
 
     expect(
-      openPr({ repo, branch: 'ktchn/r1', title: 't', body: 'b', gh })
+      openPr({
+        repo,
+        branch: 'ktchn/r1',
+        baseBranch: 'main',
+        title: 't',
+        body: 'b',
+        gh,
+      })
     ).toBe(URL);
     expect(git(origin, 'rev-parse', 'refs/heads/ktchn/r1')).toBe(
       git(repo, 'rev-parse', 'ktchn/r1')
     );
+  });
+});
+
+describe('originBase', () => {
+  test("bases on origin's default branch, not the owner's unpushed commits", () => {
+    const { root, repo, origin, gh } = setup();
+    addGithubOrigin(root, repo, origin);
+    git(repo, 'push', '-q', origin, 'main:refs/heads/main');
+    const pushed = git(repo, 'rev-parse', 'main');
+    git(repo, 'checkout', '-q', '-b', 'mine');
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'unpushed');
+    const head = git(repo, 'rev-parse', 'HEAD');
+
+    expect(originBase(repo, gh)).toEqual({
+      base: pushed,
+      baseBranch: 'main',
+    });
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(repo, 'branch', '--show-current')).toBe('mine');
   });
 });
 
@@ -165,7 +205,14 @@ describe('openPr with a PR already open', () => {
     git(repo, 'push', '-q', origin, 'other:refs/heads/ktchn/r1');
     git(repo, 'checkout', '-q', 'main');
 
-    const pr = { repo, branch: 'ktchn/r1', title: 't', body: 'b', gh };
+    const pr = {
+      repo,
+      branch: 'ktchn/r1',
+      baseBranch: 'main',
+      title: 't',
+      body: 'b',
+      gh,
+    };
     expect(openPr(pr)).toBe(URL);
   });
 });

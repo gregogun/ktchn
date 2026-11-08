@@ -14,7 +14,7 @@ const job: Job = {
 describe('ledger', () => {
   test('a run with no events is queued with its job', () => {
     const ledger = openLedger(':memory:');
-    ledger.startRun('run-1', job, 'abc');
+    ledger.startRun('run-1', job, 'abc', 'main');
     expect(ledger.job('run-1')).toEqual(job);
     expect(ledger.base('run-1')).toBe('abc');
     expect(ledger.replay('run-1').state.status).toBe('queued');
@@ -22,9 +22,10 @@ describe('ledger', () => {
 
   test('a resumed run keeps the base it started from', () => {
     const ledger = openLedger(':memory:');
-    expect(ledger.startRun('run-1', job, 'abc')).toBe(true);
-    expect(ledger.startRun('run-1', job, 'def')).toBe(false);
+    expect(ledger.startRun('run-1', job, 'abc', 'main')).toBe(true);
+    expect(ledger.startRun('run-1', job, 'def', 'dev')).toBe(false);
     expect(ledger.base('run-1')).toBe('abc');
+    expect(ledger.baseBranch('run-1')).toBe('main');
   });
 
   test('run state is the events replayed through the run machine', () => {

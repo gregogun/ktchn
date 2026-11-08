@@ -101,7 +101,7 @@ const world = (
     model: DEFAULT_MODEL,
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
-  ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'));
+  ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'), 'main');
   const base = ledger.base(runId);
   assert(base !== undefined);
   const info = { agentHostname: '', inputs: [] as string[] };
@@ -114,6 +114,7 @@ const world = (
       job,
       image,
       base,
+      baseBranch: 'main',
       openAgent: async (sandbox) => ({
         run: async ({ input, number }) => {
           info.agentHostname = (await sandbox.exec('hostname')).stdout.trim();
@@ -441,7 +442,7 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   const first = spawn('sleep', ['60']);
   assert(first.pid !== undefined);
   assert.deepEqual(ledger.acquireLease(runId, first.pid), { held: true });
-  ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'));
+  ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'), 'main');
   ledger.close();
 
   const second = spawnSync('node', ['src/start.ts', repo, text], {

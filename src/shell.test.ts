@@ -81,7 +81,14 @@ const world = (policy: Job['policy']) => {
     policy,
     model: 'm',
   });
-  return { home, repo, runId, job, base: git(repo, 'rev-parse', 'HEAD') };
+  return {
+    home,
+    repo,
+    runId,
+    job,
+    base: git(repo, 'rev-parse', 'HEAD'),
+    baseBranch: 'main',
+  };
 };
 
 describe('buildShell', () => {
@@ -119,6 +126,7 @@ describe('buildShell', () => {
     const { shell } = buildShell({
       ...w,
       base: 'f'.repeat(40),
+      baseBranch: 'main',
       image: 'img',
       openAgent: async () => ({
         run: async () => ({}) as never,
@@ -255,6 +263,7 @@ describe('buildShell', () => {
     const { shell } = buildShell({
       ...w,
       image: 'img',
+      baseBranch: 'main',
       gh,
       openAgent: async () => ({
         run: async () => ({}) as never,

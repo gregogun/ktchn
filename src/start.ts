@@ -7,9 +7,8 @@ import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from './agent.ts';
 import { driveRun } from './driver.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
-import { checkCanOpenPr } from './pr.ts';
+import { checkCanOpenPr, originBase } from './pr.ts';
 import { isTerminal } from './run-machine.ts';
-import { git } from './git.ts';
 import { buildShell } from './shell.ts';
 
 const usage =
@@ -88,16 +87,18 @@ if (!isTerminal(before)) {
 }
 const apiKey = readOpenRouterKey();
 
-const startHead = git(job.repo, ['rev-parse', '--verify', 'HEAD^{commit}'], {
-  scope: 'owner',
-});
-console.log(
-  ledger.startRun(runId, job, startHead)
-    ? `run ${runId} started`
-    : `run ${runId} resumed`
-);
+if (ledger.base(runId) === undefined) {
+  const start = originBase(job.repo);
+  ledger.startRun(runId, job, start.base, start.baseBranch);
+  console.log(`run ${runId} started`);
+} else {
+  console.log(`run ${runId} resumed`);
+}
 const base = ledger.base(runId);
-if (base === undefined) throw new Error(`Run ${runId} has no recorded base`);
+const baseBranch = ledger.baseBranch(runId);
+if (base === undefined || baseBranch === undefined) {
+  throw new Error(`Run ${runId} has no recorded base branch`);
+}
 
 const { shell, close } = buildShell({
   home,
@@ -105,6 +106,7 @@ const { shell, close } = buildShell({
   job,
   image,
   base,
+  baseBranch,
   openAgent: async ({ env }) => {
     if (env === undefined) throw new Error('The agent sandbox has no pi-env');
     return openAgent({
