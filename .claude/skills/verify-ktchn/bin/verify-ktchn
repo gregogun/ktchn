@@ -1,0 +1,412 @@
+#!/usr/bin/env bash
+# Drives the real `node src/start.ts` against a disposable instance: its own
+# KTCHN_HOME, a throwaway project, and stand-ins for GitHub only (a local bare
+# origin behind core.sshCommand, a gh on PATH). Docker and the model are real.
+# Usage is in ../SKILL.md.
+set -euo pipefail
+
+SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+SRC=$(cd "$SKILL_DIR/../../.." && pwd -P)
+ROOT=${KTCHN_VERIFY_ROOT:-$HOME/.ktchn-verify}
+IMAGE=${KTCHN_IMAGE:-ktchn-sandbox:latest}
+SLUG=ktchn-verify/target
+ORIGIN_URL="git@github.com:$SLUG.git"
+
+die() {
+  echo "verify-ktchn: $*" >&2
+  exit 1
+}
+
+use_instance() {
+  ID=${1:?instance id required}
+  I=$ROOT/instances/$ID
+  EV=$ROOT/evidence/$ID
+  [ -d "$I" ] || die "no instance $ID under $ROOT/instances"
+  I=$(cd "$I" && pwd -P)
+  KHOME=$I/home
+  PROJECT=$I/project
+  ORIGIN=$I/origin.git
+  BIN=$I/bin
+}
+
+write_stand_ins() {
+  cat >"$BIN/ssh-stand-in" <<EOF
+#!/bin/sh
+# git runs this as its ssh, through core.sshCommand in the throwaway project.
+# Nothing here reaches github.com: both directions go to the local bare origin.
+printf '%s\n' "\$*" >> '$I/ssh.log'
+case "\$2" in
+  "git-upload-pack "*) exec git upload-pack '$ORIGIN' ;;
+  "git-receive-pack "*) exec git receive-pack '$ORIGIN' ;;
+  *) echo "ssh stand-in: refused: \$*" >&2; exit 1 ;;
+esac
+EOF
+  cat >"$BIN/gh" <<EOF
+#!/bin/sh
+# Replaces gh for this instance. Holds no token and makes no network call.
+dir='$I'
+echo "\$*" >> "\$dir/gh.log"
+head= previous=
+for arg in "\$@"; do [ "\$previous" = --head ] && head=\$arg; previous=\$arg; done
+key=\$(printf %s "\$head" | tr / _)
+case "\$1 \$2" in
+  "repo view")
+    [ -f "\$dir/gh.fail" ] && { echo "not logged in" >&2; exit 1; }
+    [ "\$3" = "github.com/$SLUG" ] || { echo "gh stand-in: unexpected repo \$3" >&2; exit 1; }
+    case "\$*" in
+      *defaultBranchRef*) echo '{"defaultBranchRef":{"name":"main"}}' ;;
+      *) echo '{"url":"https://github.com/$SLUG"}' ;;
+    esac ;;
+  "pr list")
+    case "\$*" in *"-R github.com/$SLUG"*) ;; *) echo "gh stand-in: pr list needs -R" >&2; exit 1 ;; esac
+    if [ -f "\$dir/prs/\$key.list" ]; then cat "\$dir/prs/\$key.list"; else echo '[]'; fi ;;
+  "pr create")
+    case "\$*" in *"-R github.com/$SLUG"*) ;; *) echo "gh stand-in: pr create needs -R" >&2; exit 1 ;; esac
+    number=\$((\$(ls "\$dir/prs" | grep -c '\\.list\$') + 1))
+    cat > "\$dir/prs/\$key.body"
+    echo "\$*" > "\$dir/prs/\$key.create"
+    echo "[{\"url\":\"https://github.com/$SLUG/pull/\$number\",\"isCrossRepository\":false}]" > "\$dir/prs/\$key.list"
+    echo "https://github.com/$SLUG/pull/\$number" ;;
+  *) echo "gh stand-in: unsupported: \$*" >&2; exit 1 ;;
+esac
+EOF
+  chmod +x "$BIN/ssh-stand-in" "$BIN/gh"
+}
+
+cmd_launch() {
+  local id=${1:-$(date +%Y%m%d-%H%M%S)-$$}
+  command -v docker >/dev/null || die "docker is not installed"
+  docker info >/dev/null 2>&1 || die "the docker daemon is not running"
+  [ -d "$SRC/node_modules" ] || (cd "$SRC" && pnpm install --frozen-lockfile)
+  docker image inspect "$IMAGE" >/dev/null 2>&1 ||
+    "$SRC/scripts/build-sandbox-image.sh" "$IMAGE"
+
+  [ ! -e "$ROOT/instances/$id" ] || die "instance $id already exists"
+  mkdir -p "$ROOT/instances/$id/home/sessions" "$ROOT/instances/$id/bin" \
+    "$ROOT/instances/$id/pids" "$ROOT/instances/$id/prs" \
+    "$ROOT/instances/$id/empty-home" "$ROOT/evidence/$id"
+  use_instance "$id"
+  write_stand_ins
+
+  git init -q --bare -b main "$ORIGIN"
+  git init -q -b main "$PROJECT"
+  git -C "$PROJECT" config user.name 'ktchn verify'
+  git -C "$PROJECT" config user.email 'verify@example.com'
+  git -C "$PROJECT" config ssh.variant simple
+  git -C "$PROJECT" config core.sshCommand "'$BIN/ssh-stand-in'"
+  git -C "$PROJECT" remote add origin "$ORIGIN_URL"
+  printf '# verify target\n' >"$PROJECT/README.md"
+  printf '{ "name": "verify-target", "private": true }\n' >"$PROJECT/package.json"
+  git -C "$PROJECT" add .
+  git -C "$PROJECT" commit -qm init
+  git -C "$PROJECT" push -q origin main
+  : >"$I/gh.log"
+
+  cmd_doctor "$id" >&2
+  echo "$id"
+}
+
+ledger_node() {
+  LEDGER="$KHOME/ledger.sqlite" node --no-warnings --input-type=module -e "$1"
+}
+
+ledger_json() {
+  [ -f "$KHOME/ledger.sqlite" ] || {
+    echo '[]'
+    return
+  }
+  ledger_node '
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(process.env.LEDGER, { readOnly: true });
+    const rows = db.prepare("SELECT seq, run_id, key, record, at FROM ledger ORDER BY seq").all();
+    console.log(JSON.stringify(rows.map((r) => ({ ...r, record: JSON.parse(r.record) })), null, 2));
+  '
+}
+
+ledger_summary() {
+  [ -f "$KHOME/ledger.sqlite" ] || return 0
+  ledger_node '
+    import { DatabaseSync } from "node:sqlite";
+    const db = new DatabaseSync(process.env.LEDGER, { readOnly: true });
+    const runs = new Map();
+    for (const row of db.prepare("SELECT run_id, record FROM ledger ORDER BY seq").all()) {
+      const run = runs.get(row.run_id) ?? { events: [], cost: 0, calls: 0 };
+      const r = JSON.parse(row.record);
+      if (r.kind === "run_event") run.events.push(r.event.type);
+      if (r.kind === "model_call") { run.cost += r.call.cost; run.calls++; }
+      runs.set(row.run_id, run);
+    }
+    for (const [id, r] of runs)
+      console.log(`run ${id}: ${r.events.join(" > ")}; ${r.calls} model calls, $${r.cost.toFixed(4)}`);
+  '
+}
+
+run_ids() {
+  {
+    [ -d "$KHOME/runs" ] && ls "$KHOME/runs"
+    [ -f "$KHOME/ledger.sqlite" ] && ledger_node '
+      import { DatabaseSync } from "node:sqlite";
+      const db = new DatabaseSync(process.env.LEDGER, { readOnly: true });
+      for (const r of db.prepare("SELECT DISTINCT run_id FROM ledger").all()) console.log(r.run_id);
+    '
+    docker volume ls --filter "label=ktchn.home=$KHOME" --format '{{.Label "ktchn.run"}}'
+  } 2>/dev/null | sort -u | grep . || true
+}
+
+instance_containers() {
+  local run
+  for run in $(run_ids); do
+    docker ps -a --filter "label=ktchn.run=$run" --format '{{.Names}} {{.Status}}'
+  done
+}
+
+capture() {
+  local dir=$1
+  git -C "$PROJECT" for-each-ref >"$dir/refs-after.txt"
+  git --git-dir="$ORIGIN" for-each-ref >"$dir/origin-refs-after.txt"
+  ledger_json >"$dir/ledger.json"
+  ledger_summary >"$dir/ledger-summary.txt"
+  local name
+  for name in gh.log ssh.log; do
+    [ ! -f "$I/$name" ] || cp "$I/$name" "$dir/$name"
+  done
+  cp -R "$I/prs" "$dir/prs"
+  (cd "$KHOME" && find runs -maxdepth 2 2>/dev/null | sort) >"$dir/home-runs.txt" || true
+  {
+    echo '# containers'
+    instance_containers
+    echo '# volumes'
+    docker volume ls --filter "label=ktchn.home=$KHOME" --format '{{.Name}}'
+  } >"$dir/docker.txt"
+  local ref
+  for ref in $(git -C "$PROJECT" for-each-ref --format='%(refname)' refs/heads/ktchn); do
+    {
+      git -C "$PROJECT" log --stat "refs/heads/main..$ref"
+      echo '# net change against main'
+      git -C "$PROJECT" diff "refs/heads/main...$ref"
+    } >"$dir/handoff-${ref##*/}.patch"
+  done
+}
+
+print_result() {
+  local dir=$1
+  echo "exit: $(cat "$dir/exit-code.txt")"
+  echo "--- stdout"
+  cat "$dir/stdout.txt"
+  echo "--- stderr (node warnings removed)"
+  grep -v -e ExperimentalWarning -e 'trace-warnings' "$dir/stderr.txt" || true
+  echo "--- ledger"
+  cat "$dir/ledger-summary.txt"
+  echo "--- captured in $dir"
+}
+
+# Runs start.ts with exactly these arguments, in this instance's environment.
+run_cli() {
+  local label=$1 background=$2 no_key=$3
+  shift 3
+  local dir="$EV/$label"
+  [ ! -e "$dir" ] || die "label $label was already used in $ID; pick another"
+  [ "$(PATH="$BIN:$PATH" command -v gh)" = "$BIN/gh" ] || die "gh would not resolve to the stand-in"
+  [ -n "$(git -C "$PROJECT" config core.sshCommand)" ] || die "the project lost its ssh stand-in"
+  mkdir -p "$dir"
+  git -C "$PROJECT" for-each-ref >"$dir/refs-before.txt"
+  printf '%q ' node src/start.ts "$@" >"$dir/command.txt"
+  echo >>"$dir/command.txt"
+
+  local env_args=("KTCHN_HOME=$KHOME" "KTCHN_IMAGE=$IMAGE" "PATH=$BIN:$PATH")
+  [ "$no_key" = 0 ] || env_args+=("HOME=$I/empty-home")
+
+  if [ "$background" = 1 ]; then
+    (
+      cd "$SRC"
+      if [ "$no_key" = 1 ]; then unset OPENROUTER_API_KEY; fi
+      env "${env_args[@]}" node src/start.ts "$@" \
+        >"$dir/stdout.txt" 2>"$dir/stderr.txt" </dev/null &
+      local child=$!
+      echo "$child" >"$I/pids/$label.pid"
+      local code=0
+      wait "$child" || code=$?
+      echo "$code" >"$dir/exit-code.txt"
+    ) >/dev/null 2>&1 &
+    while [ ! -s "$I/pids/$label.pid" ]; do sleep 0.1; done
+    echo "started $label as pid $(cat "$I/pids/$label.pid")"
+    return 0
+  fi
+
+  local code=0
+  (
+    cd "$SRC"
+    if [ "$no_key" = 1 ]; then unset OPENROUTER_API_KEY; fi
+    exec env "${env_args[@]}" node src/start.ts "$@" \
+      >"$dir/stdout.txt" 2>"$dir/stderr.txt" </dev/null
+  ) || code=$?
+  echo "$code" >"$dir/exit-code.txt"
+  capture "$dir"
+  print_result "$dir"
+}
+
+cmd_run() {
+  local background=0 no_key=0 with_project=$1
+  shift
+  use_instance "${1:?instance id required}"
+  local label=${2:?label required}
+  shift 2
+  while [ "${1:-}" != "--" ]; do
+    case "${1:-}" in
+      --background) background=1 ;;
+      --no-key) no_key=1 ;;
+      *) die "unknown option ${1:-(none)}; put start.ts arguments after --" ;;
+    esac
+    shift
+  done
+  shift
+  if [ "$with_project" = 1 ]; then
+    run_cli "$label" "$background" "$no_key" "$PROJECT" "$@"
+  else
+    run_cli "$label" "$background" "$no_key" "$@"
+  fi
+}
+
+cmd_wait() {
+  use_instance "${1:?instance id required}"
+  local label=${2:?label required} timeout=${3:-600}
+  local dir="$EV/$label" start=$SECONDS
+  until [ -s "$dir/exit-code.txt" ]; do
+    [ $((SECONDS - start)) -lt "$timeout" ] || die "$label still running after ${timeout}s"
+    sleep 1
+  done
+  capture "$dir"
+  print_result "$dir"
+}
+
+cmd_wait_file() {
+  use_instance "${1:?instance id required}"
+  local path=${2:?path inside the sandbox required} timeout=${3:-300}
+  local start=$SECONDS run name
+  while [ $((SECONDS - start)) -lt "$timeout" ]; do
+    for run in $(run_ids); do
+      for name in $(docker ps --filter "label=ktchn.run=$run" --format '{{.Names}}'); do
+        if docker exec "$name" test -e "$path" 2>/dev/null; then
+          echo "$name"
+          return 0
+        fi
+      done
+    done
+    sleep 1
+  done
+  die "$path did not appear in a sandbox within ${timeout}s"
+}
+
+ours_alive() {
+  local pid=$1
+  kill -0 "$pid" 2>/dev/null && ps -o command= -p "$pid" | grep -q 'src/start.ts'
+}
+
+cmd_kill() {
+  use_instance "${1:?instance id required}"
+  local label=${2:?label required}
+  local pid
+  pid=$(cat "$I/pids/$label.pid")
+  ours_alive "$pid" || die "pid $pid is not a live start.ts from $label"
+  kill -KILL "$pid"
+  echo "sent SIGKILL to $pid"
+}
+
+cmd_env() {
+  use_instance "${1:?instance id required}"
+  printf 'export KTCHN_VERIFY_ID=%q\n' "$ID"
+  printf 'export KTCHN_VERIFY_INSTANCE=%q\n' "$I"
+  printf 'export KTCHN_VERIFY_PROJECT=%q\n' "$PROJECT"
+  printf 'export KTCHN_VERIFY_EVIDENCE=%q\n' "$EV"
+}
+
+cmd_doctor() {
+  use_instance "${1:?instance id required}"
+  local bad=0 want have
+  check() {
+    if eval "$2" >/dev/null 2>&1; then
+      echo "ok    $1"
+    else
+      echo "FAIL  $1"
+      bad=1
+    fi
+  }
+  echo "build     $(git -C "$SRC" rev-parse --short HEAD)$(git -C "$SRC" diff --quiet HEAD -- src || echo ' (src has uncommitted changes)')"
+  echo "instance  $I"
+  want=$(cat "$SRC/.nvmrc")
+  have=$(node -p 'process.versions.node.split(".")[0]')
+  [ "$have" = "$want" ] && echo "ok    node $have matches .nvmrc" ||
+    echo "warn  node $have, .nvmrc wants $want"
+  check "node_modules installed" '[ -d "$SRC/node_modules" ]'
+  check "docker daemon reachable" 'docker info'
+  check "image $IMAGE is a ktchn sandbox image" \
+    'docker run --rm --network none "$IMAGE" test -f /etc/ktchn-sandbox'
+  check "OpenRouter key present (value not read out)" \
+    '[ -n "${OPENROUTER_API_KEY:-}" ] || node -e "process.exit(typeof JSON.parse(require(\"fs\").readFileSync(require(\"os\").homedir()+\"/.pi/agent/auth.json\",\"utf8\")).openrouter?.key===\"string\"?0:1)"'
+  check "KTCHN_HOME is disposable, not ~/.ktchn" '[ "$KHOME" != "$HOME/.ktchn" ]'
+  check "gh resolves to the stand-in" '[ "$(PATH="$BIN:$PATH" command -v gh)" = "$BIN/gh" ]'
+  check "origin looks like GitHub and reads the local stand-in" \
+    '[ "$(git -C "$PROJECT" remote get-url --push origin)" = "$ORIGIN_URL" ] && git -C "$PROJECT" ls-remote origin refs/heads/main | grep -q main'
+  local pidfile
+  for pidfile in "$I"/pids/*.pid; do
+    [ -f "$pidfile" ] || continue
+    ours_alive "$(cat "$pidfile")" && echo "note  $(basename "$pidfile" .pid) is still running"
+  done
+  echo "sandboxes $(instance_containers | wc -l | tr -d ' ') containers"
+  ledger_summary
+  return "$bad"
+}
+
+cmd_list() {
+  [ -d "$ROOT/instances" ] && ls "$ROOT/instances"
+  return 0
+}
+
+cmd_cleanup() {
+  use_instance "${1:?instance id required}"
+  local report="$EV/cleanup.txt" pidfile pid run names volumes
+  : >"$report"
+  for pidfile in "$I"/pids/*.pid; do
+    [ -f "$pidfile" ] || continue
+    pid=$(cat "$pidfile")
+    if ours_alive "$pid"; then
+      kill -KILL "$pid"
+      echo "killed $pid ($(basename "$pidfile" .pid))" >>"$report"
+    fi
+  done
+  for run in $(run_ids); do
+    names=$(docker ps -aq --filter "label=ktchn.run=$run")
+    if [ -n "$names" ]; then
+      # shellcheck disable=SC2086
+      docker rm -f $names >/dev/null
+      echo "removed containers of run $run" >>"$report"
+    fi
+  done
+  volumes=$(docker volume ls -q --filter "label=ktchn.home=$KHOME")
+  if [ -n "$volumes" ]; then
+    # shellcheck disable=SC2086
+    docker volume rm $volumes >/dev/null
+    echo "removed volumes: $volumes" >>"$report"
+  fi
+  case "$I" in
+    */instances/*) rm -rf "$I" ;;
+    *) die "refusing to remove $I" ;;
+  esac
+  echo "removed instance directory $I" >>"$report"
+  cat "$report"
+  echo "evidence kept in $EV"
+}
+
+case "${1:-}" in
+  launch) shift; cmd_launch "$@" ;;
+  doctor) shift; cmd_doctor "$@" ;;
+  start) shift; cmd_run 1 "$@" ;;
+  raw) shift; cmd_run 0 "$@" ;;
+  wait) shift; cmd_wait "$@" ;;
+  wait-file) shift; cmd_wait_file "$@" ;;
+  kill) shift; cmd_kill "$@" ;;
+  env) shift; cmd_env "$@" ;;
+  list) cmd_list ;;
+  cleanup) shift; cmd_cleanup "$@" ;;
+  *) die "usage: verify-ktchn launch|doctor|start|raw|wait|wait-file|kill|env|list|cleanup (see SKILL.md)" ;;
+esac
