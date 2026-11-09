@@ -23,6 +23,7 @@ const { shell } = buildShell({
   job,
   image,
   base,
+  baseBranch: 'main',
   openAgent: async (sandbox) => ({
     run: async () => {
       const made = await sandbox.exec(

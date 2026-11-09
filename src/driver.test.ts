@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { driveRun, type ReviewOutcome, type RunShell } from './driver.ts';
-import { openLedger } from './ledger.ts';
+import { openLedger, type CheckResult } from './ledger.ts';
 import type { AgentInput, RunState } from './run-machine.ts';
 
 const passed: ReviewOutcome = {
@@ -12,11 +12,13 @@ const failed: ReviewOutcome = {
   results: [{ command: 'pnpm test', exitCode: 1, output: 'boom' }],
 };
 
+const PR = 'https://github.com/o/r/pull/1';
+
 const fakeShell = (reviews: (ReviewOutcome | 'crash')[]) => {
   const agentCalls: [AgentInput['kind'], number][] = [];
   const reports: RunState[] = [];
   let closes = 0;
-  const handedOff: string[] = [];
+  const opened: [string, readonly CheckResult[]][] = [];
   let discards = 0;
   const shell: RunShell = {
     runAgent: async ({ input, number }) => {
@@ -44,8 +46,9 @@ const fakeShell = (reviews: (ReviewOutcome | 'crash')[]) => {
     closeSandbox: async () => {
       closes++;
     },
-    handOff: (oid) => {
-      handedOff.push(oid);
+    openPr: async (oid, checks) => {
+      opened.push([oid, checks]);
+      return PR;
     },
     discard: async () => {
       discards++;
@@ -56,7 +59,7 @@ const fakeShell = (reviews: (ReviewOutcome | 'crash')[]) => {
     shell,
     agentCalls,
     reports,
-    handedOff,
+    opened,
     closes: () => closes,
     discards: () => discards,
   };
@@ -68,31 +71,47 @@ const kinds = (ledger: ReturnType<typeof openLedger>, runId: string) =>
     .map((r) => (r.kind === 'run_event' ? r.event.type : r.kind));
 
 describe('driveRun', () => {
-  test('a run whose checks pass waits to open its PR with its evidence recorded', async () => {
+  test('a run whose checks pass opens a PR of the reviewed commit with its checks, and is done', async () => {
     const ledger = openLedger(':memory:');
-    const { shell, agentCalls, reports } = fakeShell([passed]);
+    const { shell, agentCalls, reports, opened, discards } = fakeShell([
+      failed,
+      passed,
+    ]);
     const state = await driveRun(ledger, 'run-1', shell);
-    expect(state).toMatchObject({ status: 'in_review', step: 'opening_pr' });
-    expect(agentCalls).toEqual([['job', 1]]);
+    expect(state).toEqual({ status: 'done', pr: PR });
+    expect(agentCalls).toEqual([
+      ['job', 1],
+      ['findings', 2],
+    ]);
+    expect(opened).toEqual([['abc123', passed.results]]);
     expect(reports).toEqual([state]);
-    expect(kinds(ledger, 'run-1')).toEqual([
-      'Dequeued',
-      'model_call',
-      'AgentFinished',
+    expect(discards()).toBe(1);
+    expect(kinds(ledger, 'run-1').slice(-3)).toEqual([
       'checks_ran',
       'ReviewPassed',
+      'PrOpened',
     ]);
   });
 
-  test('a passed review hands the reviewed commit to the owner, again on every drive', async () => {
+  test('a PR that fails to open leaves the run waiting, and the next drive opens it', async () => {
     const ledger = openLedger(':memory:');
-    const first = fakeShell([passed]);
-    await driveRun(ledger, 'run-1', first.shell);
-    expect(first.handedOff).toEqual(['abc123']);
-    expect(first.discards()).toBe(0);
+    const failing: RunShell = {
+      ...fakeShell([passed]).shell,
+      openPr: async () => {
+        throw new Error('gh: not logged in');
+      },
+    };
+    await expect(driveRun(ledger, 'run-1', failing)).rejects.toThrow(
+      'not logged in'
+    );
+    expect(ledger.replay('run-1').state).toMatchObject({
+      step: 'opening_pr',
+    });
     const again = fakeShell([]);
-    await driveRun(ledger, 'run-1', again.shell);
-    expect(again.handedOff).toEqual(['abc123']);
+    const state = await driveRun(ledger, 'run-1', again.shell);
+    expect(state).toEqual({ status: 'done', pr: PR });
+    expect(again.opened.map(([oid]) => oid)).toEqual(['abc123']);
+    expect(kinds(ledger, 'run-1')).not.toContain('Crashed');
   });
 
   test('a run that reached a terminal state discards what it left, a parked one keeps it', async () => {
@@ -106,16 +125,6 @@ describe('driveRun', () => {
     const state = await driveRun(ledger, 'run-1', done.shell);
     expect(state.status).toBe('failed');
     expect(done.discards()).toBe(1);
-  });
-
-  test('failed checks go back to the agent as findings', async () => {
-    const ledger = openLedger(':memory:');
-    const { shell, agentCalls } = fakeShell([failed, passed]);
-    await driveRun(ledger, 'run-1', shell);
-    expect(agentCalls).toEqual([
-      ['job', 1],
-      ['findings', 2],
-    ]);
   });
 
   test('checks failing every review park the run and close the sandbox', async () => {
@@ -135,7 +144,7 @@ describe('driveRun', () => {
       driveRun(ledger, 'run-1', fakeShell(['crash']).shell)
     ).rejects.toThrow('crash');
     const state = await driveRun(ledger, 'run-1', fakeShell([passed]).shell);
-    expect(state).toMatchObject({ step: 'opening_pr', crashResumed: true });
+    expect(state.status).toBe('done');
     expect(kinds(ledger, 'run-1')).toEqual([
       'Dequeued',
       'model_call',
@@ -143,6 +152,7 @@ describe('driveRun', () => {
       'Crashed',
       'checks_ran',
       'ReviewPassed',
+      'PrOpened',
     ]);
   });
 

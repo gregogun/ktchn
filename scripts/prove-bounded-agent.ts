@@ -82,7 +82,7 @@ const { runId, job } = makeJob({
   model: DEFAULT_MODEL,
 });
 const ledger = openLedger(join(home, 'ledger.sqlite'));
-ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'));
+ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'), 'main');
 const base = ledger.base(runId);
 assert(base !== undefined);
 
@@ -161,6 +161,7 @@ const { shell, close } = buildShell({
   job,
   image,
   base,
+  baseBranch: 'main',
   openAgent: async (sandbox) => ({
     run: async () => {
       await script(sandbox);

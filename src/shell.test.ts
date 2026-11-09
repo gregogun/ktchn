@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   realpathSync,
@@ -80,7 +81,14 @@ const world = (policy: Job['policy']) => {
     policy,
     model: 'm',
   });
-  return { home, repo, runId, job, base: git(repo, 'rev-parse', 'HEAD') };
+  return {
+    home,
+    repo,
+    runId,
+    job,
+    base: git(repo, 'rev-parse', 'HEAD'),
+    baseBranch: 'main',
+  };
 };
 
 describe('buildShell', () => {
@@ -118,6 +126,7 @@ describe('buildShell', () => {
     const { shell } = buildShell({
       ...w,
       base: 'f'.repeat(40),
+      baseBranch: 'main',
       image: 'img',
       openAgent: async () => ({
         run: async () => ({}) as never,
@@ -235,12 +244,27 @@ describe('buildShell', () => {
     expect(events).not.toContain('review');
   });
 
-  test("a handoff removes the run's sandboxes and volume and keeps its clone, and repeats safely", async () => {
+  test("opening the PR hands off the reviewed commit, removes the run's sandboxes and volume, and repeats safely", async () => {
     const w = world({ network: false });
+    const origin = join(w.home, 'origin.git');
+    git(w.home, 'init', '-q', '--bare', origin);
+    const ssh = join(w.home, 'ssh');
+    writeFileSync(ssh, `#!/bin/sh\nexec git receive-pack "${origin}"\n`);
+    chmodSync(ssh, 0o755);
+    git(w.repo, 'remote', 'add', 'origin', 'git@github.com:o/r.git');
+    git(w.repo, 'config', 'core.sshCommand', ssh);
+    const gh = join(w.home, 'gh');
+    writeFileSync(
+      gh,
+      '#!/bin/sh\nif [ "$2" = list ]; then echo "[]"; else echo https://github.com/o/r/pull/1; fi\n'
+    );
+    chmodSync(gh, 0o755);
     const events: string[] = [];
     const { shell } = buildShell({
       ...w,
       image: 'img',
+      baseBranch: 'main',
+      gh,
       openAgent: async () => ({
         run: async () => ({}) as never,
         close: async () => {},
@@ -248,13 +272,17 @@ describe('buildShell', () => {
       report: () => {},
       sandboxes: recorder(events),
     });
-    shell.handOff(w.base);
-    shell.handOff(w.base);
+    expect(await shell.openPr(w.base, [])).toBe(
+      'https://github.com/o/r/pull/1'
+    );
+    expect(await shell.openPr(w.base, [])).toBe(
+      'https://github.com/o/r/pull/1'
+    );
     expect(events).toEqual([
       `remove ${w.runId} true`,
       `remove ${w.runId} true`,
     ]);
     expect(git(w.repo, 'rev-parse', w.job.branch)).toBe(w.base);
-    expect(existsSync(runDir(w.home, w.runId))).toBe(true);
+    expect(git(origin, 'rev-parse', w.job.branch)).toBe(w.base);
   });
 });

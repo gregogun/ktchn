@@ -7,7 +7,8 @@ import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from './agent.ts';
 import { driveRun } from './driver.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
-import { git } from './git.ts';
+import { checkCanOpenPr, originBase } from './pr.ts';
+import { isTerminal } from './run-machine.ts';
 import { buildShell } from './shell.ts';
 
 const usage =
@@ -67,18 +68,37 @@ if (!lease.held) {
   ledger.close();
   process.exit(1);
 }
+const before = ledger.replay(runId).state;
+if (before.status === 'done') {
+  console.log(`run ${runId} is already done: ${before.pr}`);
+  ledger.releaseLease(runId);
+  ledger.close();
+  process.exit(0);
+}
+if (!isTerminal(before)) {
+  try {
+    checkCanOpenPr(job.repo);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    ledger.releaseLease(runId);
+    ledger.close();
+    process.exit(1);
+  }
+}
 const apiKey = readOpenRouterKey();
 
-const startHead = git(job.repo, ['rev-parse', '--verify', 'HEAD^{commit}'], {
-  scope: 'owner',
-});
-console.log(
-  ledger.startRun(runId, job, startHead)
-    ? `run ${runId} started`
-    : `run ${runId} resumed`
-);
+if (ledger.base(runId) === undefined) {
+  const start = originBase(job.repo);
+  ledger.startRun(runId, job, start.base, start.baseBranch);
+  console.log(`run ${runId} started`);
+} else {
+  console.log(`run ${runId} resumed`);
+}
 const base = ledger.base(runId);
-if (base === undefined) throw new Error(`Run ${runId} has no recorded base`);
+const baseBranch = ledger.baseBranch(runId);
+if (base === undefined || baseBranch === undefined) {
+  throw new Error(`Run ${runId} has no recorded base branch`);
+}
 
 const { shell, close } = buildShell({
   home,
@@ -86,6 +106,7 @@ const { shell, close } = buildShell({
   job,
   image,
   base,
+  baseBranch,
   openAgent: async ({ env }) => {
     if (env === undefined) throw new Error('The agent sandbox has no pi-env');
     return openAgent({
@@ -109,6 +130,13 @@ const { shell, close } = buildShell({
 
 try {
   await driveRun(ledger, runId, shell);
+} catch (error) {
+  const state = ledger.replay(runId).state;
+  if (state.status !== 'in_review' || state.step !== 'opening_pr') throw error;
+  console.error(
+    `run ${runId} passed review but its PR was not opened: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ')}. Run start again to retry.`
+  );
+  process.exitCode = 1;
 } finally {
   await close();
   ledger.releaseLease(runId);

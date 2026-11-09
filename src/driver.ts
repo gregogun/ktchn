@@ -18,7 +18,7 @@ export type RunShell = {
   runAgent: (request: AgentRequest) => Promise<AgentOutcome>;
   runReview: () => Promise<ReviewOutcome>;
   closeSandbox: () => Promise<void>;
-  handOff: (oid: string) => void;
+  openPr: (oid: string, checks: readonly CheckResult[]) => Promise<string>;
   discard: () => Promise<void>;
   report: (state: RunState) => void;
 };
@@ -30,6 +30,12 @@ const append = (ledger: Ledger, runId: string, at: number, event: RunEvent) => {
     );
   }
 };
+
+const lastChecks = (ledger: Ledger, runId: string) =>
+  ledger
+    .records(runId)
+    .flatMap((r) => (r.kind === 'checks_ran' ? [r.results] : []))
+    .at(-1) ?? [];
 
 export const driveRun = async (
   ledger: Ledger,
@@ -50,7 +56,8 @@ export const driveRun = async (
       append(ledger, runId, run.events, { type: 'Dequeued' });
     } else {
       const effect = run.effects.find(
-        (e) => e.type === 'RunAgent' || e.type === 'RunReview'
+        (e) =>
+          e.type === 'RunAgent' || e.type === 'RunReview' || e.type === 'OpenPr'
       );
       if (effect?.type === 'RunAgent') {
         if (run.agentRequest === undefined) {
@@ -63,9 +70,10 @@ export const driveRun = async (
         const { event, results } = await shell.runReview();
         ledger.recordChecks(runId, run.events, results);
         append(ledger, runId, run.events, event);
+      } else if (effect?.type === 'OpenPr') {
+        const pr = await shell.openPr(effect.oid, lastChecks(ledger, runId));
+        append(ledger, runId, run.events, { type: 'PrOpened', pr });
       } else {
-        for (const e of run.effects)
-          if (e.type === 'OpenPr') shell.handOff(e.oid);
         if (run.effects.some((e) => e.type === 'KillSandbox')) {
           await shell.closeSandbox();
         }

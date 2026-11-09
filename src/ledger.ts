@@ -37,7 +37,7 @@ export type CheckResult = {
 };
 
 export type LedgerRecord =
-  | { kind: 'run_started'; job: Job; base: string }
+  | { kind: 'run_started'; job: Job; base: string; baseBranch: string }
   | { kind: 'run_event'; event: RunEvent }
   | { kind: 'model_call'; call: ModelCall }
   | { kind: 'checks_ran'; results: readonly CheckResult[] };
@@ -127,8 +127,10 @@ export const openLedger = (path: string) => {
 
   return {
     records,
-    startRun: (runId: string, job: Job, base: string) =>
-      append(runId, 'run', { kind: 'run_started', job, base }),
+    startRun: (runId: string, job: Job, base: string, baseBranch: string) =>
+      append(runId, 'run', { kind: 'run_started', job, base, baseBranch }),
+    baseBranch: (runId: string) =>
+      records(runId).find((r) => r.kind === 'run_started')?.baseBranch,
     base: (runId: string) =>
       records(runId).find((r) => r.kind === 'run_started')?.base,
     job: (runId: string) =>
