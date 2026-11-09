@@ -7,7 +7,11 @@
       "Bash(head **/.env*)",
       "Bash(tail **/.env*)",
       "Bash(less **/.env*)",
-      "Bash(more **/.env*)"
+      "Bash(more **/.env*)",
+      "Edit(/AGENTS.md)",
+      "Write(/AGENTS.md)",
+      "Edit(/CLAUDE.md)",
+      "Write(/CLAUDE.md)"
     ]
   }
 }
