@@ -1,4 +1,4 @@
-import { ensureClone, handOff, removeRun } from './clone.ts';
+import { ensureClone, handOff } from './clone.ts';
 import type { AgentOutcome, RunShell } from './driver.ts';
 import type { AgentRequest, Job } from './ledger.ts';
 import { openPr, prText } from './pr.ts';
@@ -7,13 +7,12 @@ import {
   collect,
   CollectRefused,
   openSandbox,
-  removeSandboxes,
-  sandboxName,
   seed,
   type AgentSandbox,
   type Sandbox,
 } from './sandbox.ts';
 import type { RunState } from './run-machine.ts';
+import { removeRun, removeSandboxes, sandboxName } from './run-resources.ts';
 
 export type SandboxPort = {
   open: typeof openSandbox;
@@ -91,7 +90,7 @@ export const buildShell = (opts: {
     const sandbox = await sandboxes.open({
       kind: 'agent',
       runId,
-      name: sandboxName(runId, round),
+      name: sandboxName(runId, { kind: 'agent', round }),
       image: opts.image,
       home: opts.home,
       network: job.policy.network,
@@ -113,7 +112,7 @@ export const buildShell = (opts: {
     const sandbox = await sandboxes.open({
       kind: 'collect',
       runId,
-      name: `ktchn-${runId}-collect`,
+      name: sandboxName(runId, { kind: 'collect' }),
       image: opts.image,
       home: opts.home,
     });

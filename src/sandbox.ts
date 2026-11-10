@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import {
   closeSync,
   mkdtempSync,
@@ -15,6 +15,7 @@ import {
 } from '@earendil-works/pi-env';
 import { COPY_PATH, SAFE_GIT, SEEDED, seedScript } from './box-scripts.ts';
 import { type ExecResult, runBounded } from './bounded.ts';
+import { docker } from './docker.ts';
 import {
   checkRefName,
   git,
@@ -23,11 +24,15 @@ import {
   OID,
   tryGit,
 } from './git.ts';
+import {
+  HOME_LABEL,
+  RUN_LABEL,
+  sandboxName,
+  volumeName,
+} from './run-resources.ts';
 
 const PI_ENV_DIR = '/opt/pi-env';
 const REVIEW_REF = 'refs/ktchn/review';
-const LABEL = 'ktchn.run';
-const HOME_LABEL = 'ktchn.home';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
 const GROUPED = `exec setsid -w sh -c 'echo $$ >"$0"; exec sh -c "$1"' "$0" "$1"`;
@@ -84,19 +89,6 @@ export const sandboxSettings = (opts: SandboxOpts) => {
   }
 };
 
-export const sandboxName = (runId: string, round: number) =>
-  `ktchn-${runId}-r${round}`;
-const volumeName = (runId: string) => `ktchn-${runId}`;
-
-const DOCKER_TIMEOUT_MS = 5 * 60_000;
-
-const docker = (args: readonly string[]) =>
-  execFileSync('docker', args, {
-    encoding: 'utf8',
-    timeout: DOCKER_TIMEOUT_MS,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
-
 const LIMITS = [
   '--cap-drop',
   'ALL',
@@ -125,7 +117,7 @@ export const containerArgs = (opts: {
   '--name',
   opts.name,
   '--label',
-  `${LABEL}=${opts.runId}`,
+  `${RUN_LABEL}=${opts.runId}`,
   ...LIMITS,
   ...(opts.network ? [] : ['--network', 'none']),
   ...opts.mounts,
@@ -168,38 +160,6 @@ const piEnvBinDir = () =>
 const volumeExists = (volume: string) =>
   docker(['volume', 'ls', '-q', '--filter', `name=^${volume}$`]) !== '';
 
-export const listVolumes = (): {
-  runId: string;
-  volume: string;
-  home: string;
-}[] =>
-  docker([
-    'volume',
-    'ls',
-    '--filter',
-    `label=${LABEL}`,
-    '--format',
-    `{{.Name}}\t{{.Label "${LABEL}"}}\t{{.Label "${HOME_LABEL}"}}`,
-  ])
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [volume = '', runId = '', home = ''] = line.split('\t');
-      return { runId, volume, home };
-    });
-
-export const removeSandboxes = (runId: string, withVolume: boolean) => {
-  const ids = docker([
-    'ps',
-    '-aq',
-    '--filter',
-    `label=${LABEL}=${runId}`,
-  ]).split('\n');
-  const found = ids.filter(Boolean);
-  if (found.length > 0) docker(['rm', '-f', ...found]);
-  if (withVolume) docker(['volume', 'rm', '-f', volumeName(runId)]);
-};
-
 export async function openSandbox(
   opts: Extract<SandboxOpts, { kind: 'agent' }>
 ): Promise<AgentSandbox>;
@@ -228,7 +188,7 @@ export async function openSandbox(
         'volume',
         'create',
         '--label',
-        `${LABEL}=${runId}`,
+        `${RUN_LABEL}=${runId}`,
         '--label',
         `${HOME_LABEL}=${settings.volume.home}`,
         volume,
@@ -416,7 +376,7 @@ export const openReviewSandbox = async (
   if (!OID.test(opts.oid)) throw new Error(`Not an object id: ${opts.oid}`);
   const sandbox = await open({
     runId: opts.runId,
-    name: `ktchn-${opts.runId}-review`,
+    name: sandboxName(opts.runId, { kind: 'review' }),
     image: opts.image,
     kind: 'review',
   });

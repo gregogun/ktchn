@@ -2,13 +2,13 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { sweepFinishedRuns, sweepOrphanVolumes } from './clone.ts';
 import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from './agent.ts';
 import { driveRun } from './driver.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
 import { checkCanOpenPr, originBase } from './pr.ts';
 import { isTerminal } from './run-machine.ts';
+import { sweepFinishedRuns, sweepOrphanVolumes } from './run-resources.ts';
 import { buildShell } from './shell.ts';
 
 const usage =
