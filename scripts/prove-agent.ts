@@ -58,7 +58,15 @@ try {
     storePath: join(storeDir, 'session.sqlite'),
     env: opened.env as NonNullable<typeof opened.env>,
     model: process.env.KTCHN_MODEL ?? DEFAULT_MODEL,
-    jobText,
+    job: {
+      repo,
+      branch: 'ktchn/proof-agent',
+      text: jobText,
+      policy: { network: false },
+      checks: [],
+      allowPaths: [],
+      model: process.env.KTCHN_MODEL ?? DEFAULT_MODEL,
+    },
     apiKey: readOpenRouterKey(),
   });
   try {
