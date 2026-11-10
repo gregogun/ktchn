@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { driveRun, type RunShell } from './driver.ts';
 import { openLedger } from './ledger.ts';
 import type { CheckResult, ReviewOutcome } from './review.ts';
-import type { AgentInput, RunState } from './run-machine.ts';
+import { replay, type AgentInput, type RunState } from './run-machine.ts';
 
 const passed: ReviewOutcome = {
   event: { type: 'ReviewPassed', oid: 'abc123' },
@@ -105,7 +105,7 @@ describe('driveRun', () => {
     await expect(driveRun(ledger, 'run-1', failing)).rejects.toThrow(
       'not logged in'
     );
-    expect(ledger.replay('run-1').state).toMatchObject({
+    expect(replay(ledger.events('run-1')).state).toMatchObject({
       step: 'opening_pr',
     });
     const again = fakeShell([]);
@@ -120,8 +120,9 @@ describe('driveRun', () => {
     const parked = fakeShell([failed, failed, failed]);
     await driveRun(ledger, 'run-1', parked.shell);
     expect(parked.discards()).toBe(0);
-    const replay = ledger.replay('run-1');
-    ledger.appendEvent('run-1', replay.events, { type: 'OwnerFailed' });
+    ledger.appendEvent('run-1', ledger.events('run-1').length, {
+      type: 'OwnerFailed',
+    });
     const done = fakeShell([]);
     const state = await driveRun(ledger, 'run-1', done.shell);
     expect(state.status).toBe('failed');

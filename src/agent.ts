@@ -8,10 +8,10 @@ import { createRegistry, Harness } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { CodingTools } from '@earendil-works/pi-durable/tools';
 import type { RemoteExecutionEnv } from '@earendil-works/pi-env';
-import type { AgentRequest, FreshAgentInput, ModelCall } from './ledger.ts';
+import type { ModelCall } from './ledger.ts';
 import { boundAgentEnv } from './agent-env.ts';
 import { COPY_PATH } from './box-scripts.ts';
-import type { RunEvent } from './run-machine.ts';
+import type { AgentRequest, FreshAgentInput, RunEvent } from './run-machine.ts';
 
 export type AgentOutcome = {
   event: Extract<

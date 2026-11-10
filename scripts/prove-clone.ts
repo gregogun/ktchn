@@ -19,6 +19,7 @@ import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { seedScript } from '../src/box-scripts.ts';
 import { openLedger } from '../src/ledger.ts';
+import { replay } from '../src/run-machine.ts';
 import {
   HOME_LABEL,
   RUN_LABEL,
@@ -423,7 +424,7 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   assert.equal(volumes().length, 1, 'a parked run keeps its volume');
   console.log('  parked after reviews ran out; clone and volume kept');
 
-  w.ledger.appendEvent(w.runId, w.ledger.replay(w.runId).events, {
+  w.ledger.appendEvent(w.runId, replay(w.ledger.events(w.runId)).events, {
     type: 'OwnerFailed',
   });
   const failed = await w.drive([]);
