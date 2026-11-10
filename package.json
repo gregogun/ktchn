@@ -10,7 +10,8 @@
     "knip": "knip",
     "format:check": "prettier --check .",
     "prepare": "lefthook install",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check": "pnpm format:check && pnpm lint && pnpm types:check && pnpm knip && vitest run --exclude src/box-scripts.test.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
