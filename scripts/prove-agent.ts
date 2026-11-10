@@ -7,7 +7,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from '../src/agent.ts';
 import { ensureClone } from '../src/clone.ts';
 import { removeSandboxes, sandboxName } from '../src/run-resources.ts';
-import { collect, openSandbox, seed } from '../src/sandbox.ts';
+import { collect, SANDBOX_IMAGE, openSandbox, seed } from '../src/sandbox.ts';
 import { git, makeTempRepo } from './temp-repo.ts';
 
 const repo = makeTempRepo();
@@ -32,7 +32,7 @@ const jobText = [
 const opened = await openSandbox({
   runId: 'proof-agent',
   name: sandboxName('proof-agent', { kind: 'agent', round: 1 }),
-  image: process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest',
+  image: SANDBOX_IMAGE,
   kind: 'agent',
   home,
   network: false,

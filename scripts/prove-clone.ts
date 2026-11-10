@@ -28,11 +28,11 @@ import {
   sweepOrphanVolumes,
   volumeName,
 } from '../src/run-resources.ts';
-import type { Sandbox } from '../src/sandbox.ts';
+import { SANDBOX_IMAGE, type Sandbox } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 
-const image = process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
+const image = SANDBOX_IMAGE;
 
 const shimDir = mkdtempSync(join(tmpdir(), 'ktchn-shim-'));
 const gitLog = join(shimDir, 'git.log');
