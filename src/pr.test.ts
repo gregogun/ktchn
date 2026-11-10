@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { checkCanOpenPr, openPr, originBase, prText } from './pr.ts';
-import type { CheckResult, Job } from './ledger.ts';
+import type { Job } from './job.ts';
+import type { CheckResult } from './review.ts';
 import { git } from './test-git.ts';
 
 const dirs: string[] = [];

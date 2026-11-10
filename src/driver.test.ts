@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { driveRun, type ReviewOutcome, type RunShell } from './driver.ts';
-import { openLedger, type CheckResult } from './ledger.ts';
+import { driveRun, type RunShell } from './driver.ts';
+import { openLedger } from './ledger.ts';
+import type { CheckResult, ReviewOutcome } from './review.ts';
 import type { AgentInput, RunState } from './run-machine.ts';
 
 const passed: ReviewOutcome = {

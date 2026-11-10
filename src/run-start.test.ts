@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import type { AgentOutcome } from './driver.ts';
+import type { AgentOutcome } from './agent.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
 import { prepareRun, type RunPreparation } from './run-start.ts';

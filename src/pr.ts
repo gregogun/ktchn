@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { checkRefName, git, tryGit } from './git.ts';
-import type { CheckResult, Job } from './ledger.ts';
+import type { Job } from './job.ts';
+import type { CheckResult } from './review.ts';
 
 const GH_TIMEOUT_MS = 2 * 60_000;
 

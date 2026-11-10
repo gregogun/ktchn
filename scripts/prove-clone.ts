@@ -14,7 +14,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MODEL } from '../src/agent.ts';
-import { driveRun, type AgentOutcome } from '../src/driver.ts';
+import type { AgentOutcome } from '../src/agent.ts';
+import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { seedScript } from '../src/box-scripts.ts';
 import { openLedger } from '../src/ledger.ts';

@@ -1,4 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { Job } from './job.ts';
+import type { CheckResult } from './review.ts';
 import {
   newRun,
   type AgentInput,
@@ -8,18 +10,6 @@ import {
   type RunState,
 } from './run-machine.ts';
 
-export type Policy = { network: boolean };
-
-export type Job = {
-  policy: Policy;
-  repo: string;
-  branch: string;
-  text: string;
-  checks: readonly string[];
-  allowPaths: readonly string[];
-  model: string;
-};
-
 export type ModelCall = {
   entryId: number;
   model: string;
@@ -28,12 +18,6 @@ export type ModelCall = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   cost: number;
-};
-
-export type CheckResult = {
-  command: string;
-  exitCode: number;
-  output: string;
 };
 
 export type LedgerRecord =

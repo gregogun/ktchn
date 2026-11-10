@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { openLedger, type Job } from './ledger.ts';
+import type { Job } from './job.ts';
+import { openLedger } from './ledger.ts';
 
 const job: Job = {
   repo: '/repo',

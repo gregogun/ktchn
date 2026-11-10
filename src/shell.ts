@@ -1,6 +1,8 @@
 import { ensureClone, handOff } from './clone.ts';
-import type { AgentOutcome, RunShell } from './driver.ts';
-import type { AgentRequest, Job } from './ledger.ts';
+import type { AgentOutcome } from './agent.ts';
+import type { RunShell } from './driver.ts';
+import type { Job } from './job.ts';
+import type { AgentRequest } from './ledger.ts';
 import { openPr, prText } from './pr.ts';
 import { reviewRun } from './review.ts';
 import {

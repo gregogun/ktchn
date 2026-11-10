@@ -9,7 +9,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import type { AgentRequest, Job } from './ledger.ts';
+import type { Job } from './job.ts';
+import type { AgentRequest } from './ledger.ts';
 import { makeJob } from './job.ts';
 import type { reviewRun } from './review.ts';
 import { runDir } from './run-resources.ts';

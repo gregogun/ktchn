@@ -1,18 +1,7 @@
-import type { AgentRequest, CheckResult, Ledger, ModelCall } from './ledger.ts';
+import type { AgentOutcome } from './agent.ts';
+import type { AgentRequest, Ledger } from './ledger.ts';
+import type { CheckResult, ReviewOutcome } from './review.ts';
 import { isTerminal, type RunEvent, type RunState } from './run-machine.ts';
-
-export type AgentOutcome = {
-  event: Extract<
-    RunEvent,
-    { type: 'AgentFinished' | 'AgentAsked' | 'AgentEndedEarly' }
-  >;
-  calls: readonly ModelCall[];
-};
-
-export type ReviewOutcome = {
-  event: Extract<RunEvent, { type: 'ReviewPassed' | 'ReviewFailed' }>;
-  results: readonly CheckResult[];
-};
 
 export type RunShell = {
   runAgent: (request: AgentRequest) => Promise<AgentOutcome>;

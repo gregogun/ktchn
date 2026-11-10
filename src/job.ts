@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { Job } from './ledger.ts';
+
+type Policy = { network: boolean };
+
+export type Job = {
+  policy: Policy;
+  repo: string;
+  branch: string;
+  text: string;
+  checks: readonly string[];
+  allowPaths: readonly string[];
+  model: string;
+};
 
 export const makeJob = (
   spec: Omit<Job, 'branch'>
