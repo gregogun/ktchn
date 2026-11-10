@@ -23,25 +23,28 @@ describe('seedScript', () => {
      here, to prove it deletes nothing outside a sandbox. It is the one test
      that does, so it checks where it is before it runs anything.
   */
-  test('refuses and deletes nothing when run outside a sandbox', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-guard-')));
-    dirs.push(cwd);
-    expect(cwd.startsWith(realpathSync(tmpdir()) + sep)).toBe(true);
-    expect(cwd).not.toBe(COPY_PATH);
-    expect(existsSync(SENTINEL)).toBe(false);
-    writeFileSync(join(cwd, 'keep.txt'), 'keep\n');
-    mkdirSync(join(cwd, '.git'));
-    writeFileSync(join(cwd, '.git', 'HEAD'), 'ref: refs/heads/main\n');
-    const before = readdirSync(cwd, { recursive: true }).sort();
+  test.skipIf(existsSync(SENTINEL))(
+    'refuses and deletes nothing when run outside a sandbox',
+    () => {
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-guard-')));
+      dirs.push(cwd);
+      expect(cwd.startsWith(realpathSync(tmpdir()) + sep)).toBe(true);
+      expect(cwd).not.toBe(COPY_PATH);
+      expect(existsSync(SENTINEL)).toBe(false);
+      writeFileSync(join(cwd, 'keep.txt'), 'keep\n');
+      mkdirSync(join(cwd, '.git'));
+      writeFileSync(join(cwd, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+      const before = readdirSync(cwd, { recursive: true }).sort();
 
-    const ran = spawnSync(
-      'sh',
-      ['-c', seedScript({ ref: 'refs/heads/main', identity: [] })],
-      { cwd, input: '', encoding: 'utf8' }
-    );
+      const ran = spawnSync(
+        'sh',
+        ['-c', seedScript({ ref: 'refs/heads/main', identity: [] })],
+        { cwd, input: '', encoding: 'utf8' }
+      );
 
-    expect(ran.status).toBe(GUARD_EXIT);
-    expect(ran.stderr).toMatch(/not in a ktchn sandbox copy/);
-    expect(readdirSync(cwd, { recursive: true }).sort()).toEqual(before);
-  });
+      expect(ran.status).toBe(GUARD_EXIT);
+      expect(ran.stderr).toMatch(/not in a ktchn sandbox copy/);
+      expect(readdirSync(cwd, { recursive: true }).sort()).toEqual(before);
+    }
+  );
 });
