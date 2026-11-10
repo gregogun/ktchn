@@ -1,4 +1,4 @@
-import { ensureClone, handOff, removeRun } from './clone.ts';
+import { ensureClone, handOff } from './clone.ts';
 import type { AgentOutcome, RunShell } from './driver.ts';
 import type { AgentRequest, Job } from './ledger.ts';
 import { openPr, prText } from './pr.ts';
@@ -7,13 +7,12 @@ import {
   collect,
   CollectRefused,
   openSandbox,
-  removeSandboxes,
   seed,
   type AgentSandbox,
   type Sandbox,
 } from './sandbox.ts';
 import type { RunState } from './run-machine.ts';
-import { sandboxName } from './run-resources.ts';
+import { removeRun, removeSandboxes, sandboxName } from './run-resources.ts';
 
 export type SandboxPort = {
   open: typeof openSandbox;

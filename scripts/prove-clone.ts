@@ -14,7 +14,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MODEL } from '../src/agent.ts';
-import { sweepFinishedRuns, sweepOrphanVolumes } from '../src/clone.ts';
 import { driveRun, type AgentOutcome } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { seedScript } from '../src/box-scripts.ts';
@@ -22,11 +21,14 @@ import { openLedger } from '../src/ledger.ts';
 import {
   HOME_LABEL,
   RUN_LABEL,
+  removeSandboxes,
   runDir,
   sandboxName,
+  sweepFinishedRuns,
+  sweepOrphanVolumes,
   volumeName,
 } from '../src/run-resources.ts';
-import { removeSandboxes, type Sandbox } from '../src/sandbox.ts';
+import type { Sandbox } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 

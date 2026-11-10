@@ -160,38 +160,6 @@ const piEnvBinDir = () =>
 const volumeExists = (volume: string) =>
   docker(['volume', 'ls', '-q', '--filter', `name=^${volume}$`]) !== '';
 
-export const listVolumes = (): {
-  runId: string;
-  volume: string;
-  home: string;
-}[] =>
-  docker([
-    'volume',
-    'ls',
-    '--filter',
-    `label=${RUN_LABEL}`,
-    '--format',
-    `{{.Name}}\t{{.Label "${RUN_LABEL}"}}\t{{.Label "${HOME_LABEL}"}}`,
-  ])
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [volume = '', runId = '', home = ''] = line.split('\t');
-      return { runId, volume, home };
-    });
-
-export const removeSandboxes = (runId: string, withVolume: boolean) => {
-  const ids = docker([
-    'ps',
-    '-aq',
-    '--filter',
-    `label=${RUN_LABEL}=${runId}`,
-  ]).split('\n');
-  const found = ids.filter(Boolean);
-  if (found.length > 0) docker(['rm', '-f', ...found]);
-  if (withVolume) docker(['volume', 'rm', '-f', volumeName(runId)]);
-};
-
 export async function openSandbox(
   opts: Extract<SandboxOpts, { kind: 'agent' }>
 ): Promise<AgentSandbox>;
