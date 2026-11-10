@@ -38,6 +38,7 @@ const world = () => {
   });
   const fetched: string[] = [];
   const reports: { state: RunState; cost: number }[] = [];
+  const closed: string[] = [];
   const opts = {
     home,
     runId,
@@ -45,7 +46,6 @@ const world = () => {
     report: (progress: { state: RunState; cost: number }) => {
       reports.push(progress);
     },
-    image: 'img',
     checkCanOpenPr: () => {},
     originBase: () => {
       fetched.push(repo);
@@ -54,14 +54,19 @@ const world = () => {
     sweepOrphanVolumes: noOrphans,
     readOpenRouterKey: () => 'key',
     sandboxes: {
-      open: async () => ({ ...fakeAgentSandbox() }),
+      open: async () => ({
+        ...fakeAgentSandbox(),
+        close: async () => {
+          closed.push('sandbox');
+        },
+      }),
       removeAll: () => {},
       seed: async () => {},
       collect: async () => ({ oid: 'a'.repeat(40), dirty: '' }),
     },
   };
   const seed = () => openLedger(join(home, 'ledger.sqlite'));
-  return { opts, runId, job, fetched, reports, seed };
+  return { opts, runId, job, fetched, reports, closed, seed };
 };
 
 const session = (run: AgentSession['run']): AgentSession => ({
@@ -215,6 +220,36 @@ describe('prepareRun', () => {
     expect(w.fetched).toHaveLength(1);
     await second.drive();
   });
+
+  test('a run recorded with a base but no base branch is resumed, then fails to drive and releases the lease', async () => {
+    const w = world();
+    const ledger = w.seed();
+    // Runs started before the base branch was recorded have no such key.
+    ledger.startRun(w.runId, w.job, 'a'.repeat(40), undefined as never);
+    ledger.close();
+    const prepared = ready(await prepareRun(w.opts));
+    expect(prepared.start).toBe('resumed');
+    await expect(prepared.drive()).rejects.toThrow(
+      `Run ${w.runId} has no recorded base branch`
+    );
+    expect(leaseIsFree(w)).toBe(true);
+  });
+
+  test('a key that cannot be read stops the start with the sweeps and the error, and releases the lease', async () => {
+    const w = world();
+    const prepared = await prepareRun({
+      ...w.opts,
+      readOpenRouterKey: () => {
+        throw new Error('No OpenRouter key');
+      },
+    });
+    expect(prepared).toMatchObject({
+      status: 'error',
+      sweeps: { leftovers: [], orphans: { skipped: [], failed: [] } },
+      error: new Error('No OpenRouter key'),
+    });
+    expect(leaseIsFree(w)).toBe(true);
+  });
 });
 
 describe('drive', () => {
@@ -240,6 +275,7 @@ describe('drive', () => {
       state: { status: 'parked' },
       cost: 0.25,
     });
+    expect(w.closed).toEqual(['sandbox']);
     expect(leaseIsFree(w)).toBe(true);
   });
 
@@ -283,22 +319,7 @@ describe('drive', () => {
       })
     );
     await expect(prepared.drive()).rejects.toThrow('model unreachable');
-    expect(leaseIsFree(w)).toBe(true);
-  });
-
-  test('a key that cannot be read stops the start with the sweeps and the error, and releases the lease', async () => {
-    const w = world();
-    const prepared = await prepareRun({
-      ...w.opts,
-      readOpenRouterKey: () => {
-        throw new Error('No OpenRouter key');
-      },
-    });
-    expect(prepared).toMatchObject({
-      status: 'error',
-      sweeps: { leftovers: [], orphans: { skipped: [], failed: [] } },
-      error: new Error('No OpenRouter key'),
-    });
+    expect(w.closed).toEqual(['sandbox']);
     expect(leaseIsFree(w)).toBe(true);
   });
 });

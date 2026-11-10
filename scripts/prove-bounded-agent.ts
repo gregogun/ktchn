@@ -10,12 +10,12 @@ import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { openLedger } from '../src/ledger.ts';
 import { removeSandboxes } from '../src/run-resources.ts';
-import { type AgentSandbox, DEFAULT_SANDBOX_IMAGE } from '../src/sandbox.ts';
+import { type AgentSandbox, SANDBOX_IMAGE } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { DEFAULT_MODEL } from '../src/agent.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 
-const image = DEFAULT_SANDBOX_IMAGE;
+const image = SANDBOX_IMAGE;
 const deadlineMs = Number(process.env.PROOF_DEADLINE_MS ?? 60_000);
 
 const defaultTimeoutMs = Number(process.env.PROOF_DEFAULT_TIMEOUT_MS ?? 8000);

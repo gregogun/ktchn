@@ -7,7 +7,7 @@ import { checkCanOpenPr, originBase } from './pr.ts';
 import type { reviewRun } from './review.ts';
 import { isTerminal, type RunState } from './run-machine.ts';
 import { sweepFinishedRuns, sweepOrphanVolumes } from './run-resources.ts';
-import { DEFAULT_SANDBOX_IMAGE } from './sandbox.ts';
+import { SANDBOX_IMAGE } from './sandbox.ts';
 import { buildShell, type SandboxPort } from './shell.ts';
 
 type Leftovers = ReturnType<typeof sweepFinishedRuns>['failed'];
@@ -51,7 +51,6 @@ export const prepareRun = async (opts: {
   runId: string;
   job: Job;
   report: (progress: { state: RunState; cost: number }) => void;
-  image?: string;
   checkCanOpenPr?: typeof checkCanOpenPr;
   originBase?: typeof originBase;
   sweepOrphanVolumes?: typeof sweepOrphanVolumes;
@@ -107,42 +106,42 @@ export const prepareRun = async (opts: {
         ledger.startRun(runId, job, origin.base, origin.baseBranch);
         start = 'started';
       }
-      const base = ledger.base(runId);
-      const baseBranch = ledger.baseBranch(runId);
-      if (base === undefined || baseBranch === undefined) {
-        throw new Error(`Run ${runId} has no recorded base branch`);
-      }
-
-      const { shell, close } = buildShell({
-        home,
-        runId,
-        job,
-        image: opts.image ?? DEFAULT_SANDBOX_IMAGE,
-        base,
-        baseBranch,
-        openAgent: async ({ env }) =>
-          (opts.openAgent ?? openAgent)({
-            runId,
-            storePath: join(home, 'sessions', `${runId}.sqlite`),
-            env,
-            model: job.model,
-            jobText: job.text,
-            apiKey,
-          }),
-        report: (state) =>
-          opts.report({ state, cost: modelCost(ledger, runId) }),
-        sandboxes: opts.sandboxes,
-        review: opts.review,
-      });
-
       handedOver = true;
       return {
         status: 'ready',
         sweeps,
         start,
         drive: async () => {
+          let close: (() => Promise<void>) | undefined;
           try {
-            await driveRun(ledger, runId, shell);
+            const base = ledger.base(runId);
+            const baseBranch = ledger.baseBranch(runId);
+            if (base === undefined || baseBranch === undefined) {
+              throw new Error(`Run ${runId} has no recorded base branch`);
+            }
+            const built = buildShell({
+              home,
+              runId,
+              job,
+              image: SANDBOX_IMAGE,
+              base,
+              baseBranch,
+              openAgent: async ({ env }) =>
+                (opts.openAgent ?? openAgent)({
+                  runId,
+                  storePath: join(home, 'sessions', `${runId}.sqlite`),
+                  env,
+                  model: job.model,
+                  jobText: job.text,
+                  apiKey,
+                }),
+              report: (state) =>
+                opts.report({ state, cost: modelCost(ledger, runId) }),
+              sandboxes: opts.sandboxes,
+              review: opts.review,
+            });
+            close = built.close;
+            await driveRun(ledger, runId, built.shell);
             return { status: 'finished' };
           } catch (error) {
             const state = ledger.replay(runId).state;
@@ -151,7 +150,7 @@ export const prepareRun = async (opts: {
             }
             return { status: 'pr_not_opened', error: messageOf(error) };
           } finally {
-            await close();
+            await close?.();
             ledger.releaseLease(runId);
             ledger.close();
           }
