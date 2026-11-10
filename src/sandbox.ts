@@ -58,9 +58,7 @@ export type Sandbox = {
 
 export type AgentSandbox = Sandbox & { env: RemoteExecutionEnv };
 
-/* The kind decides what a sandbox gets (ADR 0015). Only the agent's has pi-env
-   and may have a network, and review's has no volume.
-*/
+// Each kind's settings are fixed by ADR 0015.
 export type SandboxOpts = {
   runId: string;
   name: string;
@@ -411,7 +409,9 @@ export const openReviewSandbox = async (
     oid: string;
     image: string;
   },
-  open: (opts: SandboxOpts) => Promise<Sandbox> = openSandbox
+  open: (
+    opts: Extract<SandboxOpts, { kind: 'review' }>
+  ) => Promise<Sandbox> = openSandbox
 ): Promise<Sandbox> => {
   if (!OID.test(opts.oid)) throw new Error(`Not an object id: ${opts.oid}`);
   const sandbox = await open({

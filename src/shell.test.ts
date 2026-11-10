@@ -30,9 +30,6 @@ afterEach(() => {
 
 type Opened = { kind: SandboxOpts['kind']; network?: boolean };
 
-/* What the run did with sandboxes, in order, and the settings it asked each
-   kind for.
-*/
 const recorder = (events: string[], opened: Opened[] = []) => {
   const track = (opts: SandboxOpts): Opened => {
     const settings =
@@ -153,6 +150,27 @@ describe('buildShell', () => {
       expect(existsSync(runDir(w.home, w.runId))).toBe(true);
     }
   );
+
+  test('a round already open is reused, not reopened', async () => {
+    const w = world({ network: false });
+    const events: string[] = [];
+    const { shell } = buildShell({
+      ...w,
+      image: 'img',
+      openAgent: async () => agentSession(events),
+      report: () => {},
+      sandboxes: recorder(events),
+    });
+    await shell.runAgent(FIRST_ROUND);
+    await shell.runAgent(FIRST_ROUND);
+    expect(events).toEqual([
+      `remove ${w.runId} false`,
+      'open agent',
+      'seed',
+      'agent',
+      'agent',
+    ]);
+  });
 
   test('a clone that fails opens no sandbox, so no volume is made', async () => {
     const w = world({ network: false });
