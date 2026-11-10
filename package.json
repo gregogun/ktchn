@@ -11,7 +11,7 @@
     "format:check": "prettier --check .",
     "prepare": "lefthook install",
     "test": "vitest run",
-    "check": "pnpm format:check && pnpm lint && pnpm types:check && pnpm knip && vitest run --exclude src/box-scripts.test.ts"
+    "check": "pnpm format:check && pnpm lint && pnpm types:check && pnpm knip && vitest run"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

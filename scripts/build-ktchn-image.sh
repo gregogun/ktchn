@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the image for runs on ktchn itself: ktchn-ktchn:latest, from
 # ktchn-sandbox:latest plus the pnpm store for the current lockfile.
-# Set KTCHN_IMAGE to the tag you build when you use another name.
+# The tag comes from the first argument; a run picks the image with KTCHN_IMAGE.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 context=$(mktemp -d)

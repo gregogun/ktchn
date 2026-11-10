@@ -32,7 +32,7 @@ scripts/build-ktchn-image.sh              # builds ktchn-ktchn:latest
 KTCHN_IMAGE=ktchn-ktchn:latest ...        # then start runs with it
 ```
 
-The check to pass as `--check` installs from the store and runs formatting, lint, types, knip and the tests. `src/box-scripts.test.ts` is left out: it asserts `/etc/ktchn-sandbox` is absent, which is never true in a sandbox. The tests of `sandbox.ts`, `shell.ts` and `clone.ts` call no Docker, so they run:
+The check to pass as `--check` installs from the store and runs formatting, lint, types, knip and the tests. The guard test in `src/box-scripts.test.ts` asserts `/etc/ktchn-sandbox` is absent, so it skips itself in a sandbox. The tests of `sandbox.ts`, `shell.ts` and `clone.ts` call no Docker, so they run:
 
 ```sh
 pnpm install --offline --frozen-lockfile --store-dir /home/agent/.pnpm-store && pnpm check
