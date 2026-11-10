@@ -296,7 +296,7 @@ describe('buildShell', () => {
     const gh = join(w.home, 'gh');
     writeFileSync(
       gh,
-      '#!/bin/sh\nif [ "$2" = list ]; then echo "[]"; else echo https://github.com/o/r/pull/1; fi\n'
+      '#!/bin/sh\nif [ "$2" = list ]; then echo "[]"; else cat >/dev/null; echo https://github.com/o/r/pull/1; fi\n'
     );
     chmodSync(gh, 0o755);
     const events: string[] = [];

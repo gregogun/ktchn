@@ -22,3 +22,20 @@ RUN cd /tmp/deps && pnpm fetch --store-dir /home/agent/.pnpm-store
 ```
 
 Then `pnpm install --offline --store-dir /home/agent/.pnpm-store` works inside the sandbox with no network, and run with `KTCHN_IMAGE` set to that image. The store is a layer, not a mount: a read-only mounted store failed because pnpm writes to its index.
+
+## The image for runs on ktchn itself
+
+`docker/ktchn/Dockerfile` is that pattern for this repo: `ktchn-sandbox:latest` plus the pnpm store for `pnpm-lock.yaml`. Build it after the base image, and again when the lockfile changes:
+
+```sh
+scripts/build-ktchn-image.sh              # builds ktchn-ktchn:latest
+KTCHN_IMAGE=ktchn-ktchn:latest ...        # then start runs with it
+```
+
+The check to pass as `--check` installs from the store and runs formatting, lint, types, knip and the tests. The guard test in `src/box-scripts.test.ts` asserts `/etc/ktchn-sandbox` is absent, so it skips itself in a sandbox. The tests of `sandbox.ts`, `shell.ts` and `clone.ts` call no Docker, so they run:
+
+```sh
+pnpm install --offline --frozen-lockfile --store-dir /home/agent/.pnpm-store && pnpm check
+```
+
+An image older than the lockfile has no store for the new packages, so the offline install fails until the image is rebuilt.

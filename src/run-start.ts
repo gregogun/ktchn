@@ -132,7 +132,7 @@ export const prepareRun = async (opts: {
                   storePath: join(home, 'sessions', `${runId}.sqlite`),
                   env,
                   model: job.model,
-                  jobText: job.text,
+                  job,
                   apiKey,
                 }),
               report: (state) =>
