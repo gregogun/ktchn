@@ -61,6 +61,7 @@ for (const { runId: id, reason } of run.sweeps.orphans.skipped) {
 for (const { runId: id, error } of run.sweeps.orphans.failed) {
   console.error(`could not remove the volume of run ${id}: ${error}`);
 }
+if (run.status === 'error') throw run.error;
 if (run.status === 'held') {
   console.error(`run ${runId} is already being carried out by pid ${run.pid}`);
   process.exit(1);

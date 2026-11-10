@@ -286,16 +286,19 @@ describe('drive', () => {
     expect(leaseIsFree(w)).toBe(true);
   });
 
-  test('a key that cannot be read stops the start and releases the lease', async () => {
+  test('a key that cannot be read stops the start with the sweeps and the error, and releases the lease', async () => {
     const w = world();
-    await expect(
-      prepareRun({
-        ...w.opts,
-        readOpenRouterKey: () => {
-          throw new Error('No OpenRouter key');
-        },
-      })
-    ).rejects.toThrow('No OpenRouter key');
+    const prepared = await prepareRun({
+      ...w.opts,
+      readOpenRouterKey: () => {
+        throw new Error('No OpenRouter key');
+      },
+    });
+    expect(prepared).toMatchObject({
+      status: 'error',
+      sweeps: { leftovers: [], orphans: { skipped: [], failed: [] } },
+      error: new Error('No OpenRouter key'),
+    });
     expect(leaseIsFree(w)).toBe(true);
   });
 });

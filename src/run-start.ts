@@ -23,6 +23,7 @@ export type RunPreparation =
   | { status: 'held'; sweeps: Sweeps; pid: number }
   | { status: 'already_done'; sweeps: Sweeps; pr: string }
   | { status: 'cannot_open_pr'; sweeps: Sweeps; message: string }
+  | { status: 'error'; sweeps: Sweeps; error: unknown }
   | {
       status: 'ready';
       sweeps: Sweeps;
@@ -79,77 +80,86 @@ export const prepareRun = async (opts: {
       leftovers,
       orphans: { skipped: swept.skipped, failed: swept.failed },
     };
-    const lease = ledger.acquireLease(runId);
-    if (!lease.held) return { status: 'held', sweeps, pid: lease.pid };
+    try {
+      const lease = ledger.acquireLease(runId);
+      if (!lease.held) return { status: 'held', sweeps, pid: lease.pid };
 
-    const before = ledger.replay(runId).state;
-    if (before.status === 'done') {
-      return { status: 'already_done', sweeps, pr: before.pr };
-    }
-    if (!isTerminal(before)) {
-      try {
-        (opts.checkCanOpenPr ?? checkCanOpenPr)(job.repo);
-      } catch (error) {
-        return { status: 'cannot_open_pr', sweeps, message: messageOf(error) };
+      const before = ledger.replay(runId).state;
+      if (before.status === 'done') {
+        return { status: 'already_done', sweeps, pr: before.pr };
       }
-    }
-    const apiKey = (opts.readOpenRouterKey ?? readOpenRouterKey)();
-
-    let start: 'started' | 'resumed' = 'resumed';
-    if (ledger.base(runId) === undefined) {
-      const origin = (opts.originBase ?? originBase)(job.repo);
-      ledger.startRun(runId, job, origin.base, origin.baseBranch);
-      start = 'started';
-    }
-    const base = ledger.base(runId);
-    const baseBranch = ledger.baseBranch(runId);
-    if (base === undefined || baseBranch === undefined) {
-      throw new Error(`Run ${runId} has no recorded base branch`);
-    }
-
-    const { shell, close } = buildShell({
-      home,
-      runId,
-      job,
-      image: opts.image ?? DEFAULT_SANDBOX_IMAGE,
-      base,
-      baseBranch,
-      openAgent: async ({ env }) =>
-        (opts.openAgent ?? openAgent)({
-          runId,
-          storePath: join(home, 'sessions', `${runId}.sqlite`),
-          env,
-          model: job.model,
-          jobText: job.text,
-          apiKey,
-        }),
-      report: (state) => opts.report({ state, cost: modelCost(ledger, runId) }),
-      sandboxes: opts.sandboxes,
-      review: opts.review,
-    });
-
-    handedOver = true;
-    return {
-      status: 'ready',
-      sweeps,
-      start,
-      drive: async () => {
+      if (!isTerminal(before)) {
         try {
-          await driveRun(ledger, runId, shell);
-          return { status: 'finished' };
+          (opts.checkCanOpenPr ?? checkCanOpenPr)(job.repo);
         } catch (error) {
-          const state = ledger.replay(runId).state;
-          if (state.status !== 'in_review' || state.step !== 'opening_pr') {
-            throw error;
-          }
-          return { status: 'pr_not_opened', error: messageOf(error) };
-        } finally {
-          await close();
-          ledger.releaseLease(runId);
-          ledger.close();
+          return {
+            status: 'cannot_open_pr',
+            sweeps,
+            message: messageOf(error),
+          };
         }
-      },
-    };
+      }
+      const apiKey = (opts.readOpenRouterKey ?? readOpenRouterKey)();
+
+      let start: 'started' | 'resumed' = 'resumed';
+      if (ledger.base(runId) === undefined) {
+        const origin = (opts.originBase ?? originBase)(job.repo);
+        ledger.startRun(runId, job, origin.base, origin.baseBranch);
+        start = 'started';
+      }
+      const base = ledger.base(runId);
+      const baseBranch = ledger.baseBranch(runId);
+      if (base === undefined || baseBranch === undefined) {
+        throw new Error(`Run ${runId} has no recorded base branch`);
+      }
+
+      const { shell, close } = buildShell({
+        home,
+        runId,
+        job,
+        image: opts.image ?? DEFAULT_SANDBOX_IMAGE,
+        base,
+        baseBranch,
+        openAgent: async ({ env }) =>
+          (opts.openAgent ?? openAgent)({
+            runId,
+            storePath: join(home, 'sessions', `${runId}.sqlite`),
+            env,
+            model: job.model,
+            jobText: job.text,
+            apiKey,
+          }),
+        report: (state) =>
+          opts.report({ state, cost: modelCost(ledger, runId) }),
+        sandboxes: opts.sandboxes,
+        review: opts.review,
+      });
+
+      handedOver = true;
+      return {
+        status: 'ready',
+        sweeps,
+        start,
+        drive: async () => {
+          try {
+            await driveRun(ledger, runId, shell);
+            return { status: 'finished' };
+          } catch (error) {
+            const state = ledger.replay(runId).state;
+            if (state.status !== 'in_review' || state.step !== 'opening_pr') {
+              throw error;
+            }
+            return { status: 'pr_not_opened', error: messageOf(error) };
+          } finally {
+            await close();
+            ledger.releaseLease(runId);
+            ledger.close();
+          }
+        },
+      };
+    } catch (error) {
+      return { status: 'error', sweeps, error };
+    }
   } finally {
     if (!handedOver) {
       // Drops only this process's own lease row, so it is a no-op when another holds it.
