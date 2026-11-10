@@ -9,7 +9,7 @@ import { COPY_PATH } from '../src/box-scripts.ts';
 import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { openLedger } from '../src/ledger.ts';
-import { removeSandboxes, type Sandbox } from '../src/sandbox.ts';
+import { type AgentSandbox, removeSandboxes } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { DEFAULT_MODEL } from '../src/agent.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
@@ -100,8 +100,7 @@ const check = (ok: boolean, what: string) => {
 };
 
 const outcome: { big?: number; seconds?: number; spill?: number } = {};
-const script = async (sandbox: Sandbox) => {
-  assert(sandbox.env !== undefined, 'the agent sandbox has pi-env');
+const script = async (sandbox: AgentSandbox) => {
   const env = agentEnv(sandbox.env);
   const [big, hang] = await Promise.all([
     bash(env, 'yes x'),

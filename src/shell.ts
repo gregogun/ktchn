@@ -10,6 +10,7 @@ import {
   removeSandboxes,
   sandboxName,
   seed,
+  type AgentSandbox,
   type Sandbox,
 } from './sandbox.ts';
 import type { RunState } from './run-machine.ts';
@@ -40,7 +41,7 @@ export const buildShell = (opts: {
   image: string;
   base: string;
   baseBranch: string;
-  openAgent: (sandbox: Sandbox) => Promise<AgentSession>;
+  openAgent: (sandbox: AgentSandbox) => Promise<AgentSession>;
   report: (state: RunState) => void;
   sandboxes?: SandboxPort;
   review?: typeof reviewRun;
@@ -50,8 +51,8 @@ export const buildShell = (opts: {
   const sandboxes = opts.sandboxes ?? realSandboxes;
   const review = opts.review ?? reviewRun;
   let clone: string | undefined;
-  let open: { sandbox: Sandbox; round: number | 'collect' } | undefined;
-  let agent: AgentSession | undefined;
+  let open:
+    { sandbox: Sandbox; round?: number; agent?: AgentSession } | undefined;
   const theClone = () =>
     (clone ??= ensureClone({
       home: opts.home,
@@ -62,61 +63,77 @@ export const buildShell = (opts: {
     }));
 
   const closeRound = async () => {
-    const session = agent;
     const round = open;
-    agent = undefined;
     open = undefined;
     try {
-      await session?.close();
+      await round?.agent?.close();
     } finally {
       await round?.sandbox.close();
     }
   };
 
-  const openRound = async (number: number | 'collect') => {
-    const withAgent = number !== 'collect';
-    if (withAgent && open?.round === number) return;
+  const beginRound = async () => {
     await closeRound();
     sandboxes.removeAll(runId, false);
-    const source = theClone();
-    const sandbox = await sandboxes.open({
-      runId,
-      name: withAgent ? sandboxName(runId, number) : `ktchn-${runId}-collect`,
-      image: opts.image,
-      volume: true,
-      home: opts.home,
-      piEnv: withAgent,
-      network: withAgent && job.policy.network,
+    return theClone();
+  };
+
+  const seedRound = (sandbox: Sandbox, source: string) =>
+    sandboxes.seed(sandbox, {
+      repo: source,
+      ref: `refs/heads/${job.branch}`,
+      branch: job.branch,
     });
-    open = { sandbox, round: number };
+
+  const agentRound = async (round: number) => {
+    if (open?.round === round && open.agent !== undefined) return open.agent;
+    const source = await beginRound();
+    const sandbox = await sandboxes.open({
+      kind: 'agent',
+      runId,
+      name: sandboxName(runId, round),
+      image: opts.image,
+      home: opts.home,
+      network: job.policy.network,
+    });
+    open = { sandbox, round };
     try {
-      await sandboxes.seed(sandbox, {
-        repo: source,
-        ref: `refs/heads/${job.branch}`,
-        branch: job.branch,
-      });
-      if (withAgent) agent = await opts.openAgent(sandbox);
+      await seedRound(sandbox, source);
+      const agent = await opts.openAgent(sandbox);
+      open = { sandbox, round, agent };
+      return agent;
     } catch (error) {
       await closeRound();
       throw error;
     }
   };
 
+  const collectRound = async () => {
+    const source = await beginRound();
+    const sandbox = await sandboxes.open({
+      kind: 'collect',
+      runId,
+      name: `ktchn-${runId}-collect`,
+      image: opts.image,
+      home: opts.home,
+    });
+    open = { sandbox };
+    await seedRound(sandbox, source);
+    return sandboxes.collect({
+      sandbox,
+      repo: source,
+      branch: job.branch,
+      base: opts.base,
+    });
+  };
+
   const shell: RunShell = {
-    runAgent: async (request) => {
-      await openRound(request.number);
-      return (agent as AgentSession).run(request);
-    },
+    runAgent: async (request) =>
+      (await agentRound(request.number)).run(request),
     runReview: async () => {
       let collected;
       try {
-        await openRound('collect');
-        collected = await sandboxes.collect({
-          sandbox: (open as { sandbox: Sandbox }).sandbox,
-          repo: theClone(),
-          branch: job.branch,
-          base: opts.base,
-        });
+        collected = await collectRound();
       } catch (error) {
         if (!(error instanceof CollectRefused)) throw error;
         return {

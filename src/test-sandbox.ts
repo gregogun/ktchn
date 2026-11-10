@@ -2,8 +2,9 @@ import { strict as assert } from 'node:assert';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { sep } from 'node:path';
+import { Connection, RemoteExecutionEnv } from '@earendil-works/pi-env';
 import type { ExecResult } from './bounded.ts';
-import type { ExecOptions, Sandbox } from './sandbox.ts';
+import type { AgentSandbox, ExecOptions, Sandbox } from './sandbox.ts';
 
 export type Reply = Partial<ExecResult> & {
   file?: Buffer;
@@ -17,7 +18,6 @@ export const fakeSandbox = (
   const calls: Call[] = [];
   const sandbox: Sandbox = {
     name: 'fake',
-    env: undefined,
     exec: async (command, opts = {}) => {
       const call = { command, opts };
       calls.push(call);
@@ -42,3 +42,13 @@ export const fakeSandbox = (
   };
   return { sandbox, calls };
 };
+
+/* The connection starts nothing until something uses it. */
+export const fakeAgentSandbox = (): AgentSandbox => ({
+  ...fakeSandbox().sandbox,
+  env: new RemoteExecutionEnv({
+    connection: new Connection({ command: ['false'] }),
+    id: 'fake',
+    cwd: '/',
+  }),
+});

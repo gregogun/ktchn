@@ -52,9 +52,38 @@ export class CollectRefused extends Error {}
 
 export type Sandbox = {
   name: string;
-  env: RemoteExecutionEnv | undefined;
   exec: (command: string, opts?: ExecOptions) => Promise<ExecResult>;
   close: () => Promise<void>;
+};
+
+export type AgentSandbox = Sandbox & { env: RemoteExecutionEnv };
+
+/* The kind decides what a sandbox gets (ADR 0015). Only the agent's has pi-env
+   and may have a network, and review's has no volume.
+*/
+export type SandboxOpts = {
+  runId: string;
+  name: string;
+  image: string;
+} & (
+  | { kind: 'agent'; home: string; network: boolean }
+  | { kind: 'collect'; home: string }
+  | { kind: 'review' }
+);
+
+export const sandboxSettings = (opts: SandboxOpts) => {
+  switch (opts.kind) {
+    case 'agent':
+      return {
+        volume: { home: opts.home },
+        piEnv: true,
+        network: opts.network,
+      };
+    case 'collect':
+      return { volume: { home: opts.home }, piEnv: false, network: false };
+    case 'review':
+      return { volume: undefined, piEnv: false, network: false };
+  }
 };
 
 export const sandboxName = (runId: string, round: number) =>
@@ -173,20 +202,19 @@ export const removeSandboxes = (runId: string, withVolume: boolean) => {
   if (withVolume) docker(['volume', 'rm', '-f', volumeName(runId)]);
 };
 
-export const openSandbox = async (opts: {
-  runId: string;
-  name: string;
-  image: string;
-  volume: boolean;
-  home?: string;
-  piEnv: boolean;
-  network: boolean;
-}): Promise<Sandbox> => {
+export async function openSandbox(
+  opts: Extract<SandboxOpts, { kind: 'agent' }>
+): Promise<AgentSandbox>;
+export async function openSandbox(opts: SandboxOpts): Promise<Sandbox>;
+export async function openSandbox(
+  opts: SandboxOpts
+): Promise<Sandbox | AgentSandbox> {
   const { runId, name } = opts;
+  const settings = sandboxSettings(opts);
   if (!NAME.test(name)) throw new Error(`Not a sandbox name: ${name}`);
   const volume = volumeName(runId);
   docker(['rm', '-f', name]);
-  const volumeExisted = opts.volume && volumeExists(volume);
+  const volumeExisted = settings.volume !== undefined && volumeExists(volume);
   const mounts: string[] = [];
   const forgetVolume = () => {
     try {
@@ -197,22 +225,21 @@ export const openSandbox = async (opts: {
   };
   let made = false;
   try {
-    if (opts.volume) {
-      if (opts.home === undefined) throw new Error('A volume needs a home');
+    if (settings.volume) {
       docker([
         'volume',
         'create',
         '--label',
         `${LABEL}=${runId}`,
         '--label',
-        `${HOME_LABEL}=${opts.home}`,
+        `${HOME_LABEL}=${settings.volume.home}`,
         volume,
       ]);
       made = true;
       docker(chownArgs(volume, opts.image));
       mounts.push('-v', `${volume}:${COPY_PATH}`);
     }
-    if (opts.piEnv) {
+    if (settings.piEnv) {
       mounts.push('-v', `${realpathSync(piEnvBinDir())}:${PI_ENV_DIR}:ro`);
     }
     docker(
@@ -220,7 +247,7 @@ export const openSandbox = async (opts: {
         name,
         runId,
         image: opts.image,
-        network: opts.network,
+        network: settings.network,
         mounts,
       })
     );
@@ -244,21 +271,13 @@ export const openSandbox = async (opts: {
   }
 
   let execs = 0;
-  const connection = opts.piEnv
+  const connection = settings.piEnv
     ? new Connection({
         command: ['docker', 'exec', '-i', name, `${PI_ENV_DIR}/pi-env`],
       })
     : undefined;
-  return {
+  const sandbox: Sandbox = {
     name,
-    env:
-      connection === undefined
-        ? undefined
-        : new RemoteExecutionEnv({
-            connection,
-            id: `ktchn:${name}`,
-            cwd: COPY_PATH,
-          }),
     exec: (command, io = {}) => {
       const pidFile = `/tmp/ktchn-exec-${++execs}.pid`;
       return runBounded({
@@ -299,7 +318,16 @@ export const openSandbox = async (opts: {
       remove();
     },
   };
-};
+  if (connection === undefined) return sandbox;
+  return {
+    ...sandbox,
+    env: new RemoteExecutionEnv({
+      connection,
+      id: `ktchn:${name}`,
+      cwd: COPY_PATH,
+    }),
+  };
+}
 
 const stopped = (result: ExecResult, what: string) => {
   if (result.limit === 'timeout') {
@@ -383,16 +411,14 @@ export const openReviewSandbox = async (
     oid: string;
     image: string;
   },
-  open: typeof openSandbox = openSandbox
+  open: (opts: SandboxOpts) => Promise<Sandbox> = openSandbox
 ): Promise<Sandbox> => {
   if (!OID.test(opts.oid)) throw new Error(`Not an object id: ${opts.oid}`);
   const sandbox = await open({
     runId: opts.runId,
     name: `ktchn-${opts.runId}-review`,
     image: opts.image,
-    volume: false,
-    piEnv: false,
-    network: false,
+    kind: 'review',
   });
   git(opts.repo, ['update-ref', '--end-of-options', REVIEW_REF, opts.oid]);
   try {
