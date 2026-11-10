@@ -13,7 +13,7 @@ const job: Job = {
 };
 
 describe('ledger', () => {
-  test('a run with no events is queued with its job', () => {
+  test('a started run keeps its job and base and has no events yet', () => {
     const ledger = openLedger(':memory:');
     ledger.startRun('run-1', job, 'abc', 'main');
     expect(ledger.job('run-1')).toEqual(job);

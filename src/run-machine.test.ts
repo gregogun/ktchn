@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 import * as runMachine from './run-machine.ts';
-import { replay } from './run-machine.ts';
 import type { RunEvent, RunState } from './run-machine.ts';
 
 type Of<S extends RunState['status']> = Extract<RunState, { status: S }>;
@@ -386,7 +385,7 @@ describe('ended runs', () => {
 
 describe('replay', () => {
   test('a run with no events is queued with its job', () => {
-    const { state, effects, events, agentRequest } = replay([]);
+    const { state, effects, events, agentRequest } = runMachine.replay([]);
     expect(state).toEqual(queued());
     expect(effects).toEqual([]);
     expect(events).toBe(0);
@@ -394,7 +393,7 @@ describe('replay', () => {
   });
 
   test('run state is the events replayed through the run machine', () => {
-    const { state, effects, events, agentRequest } = replay([
+    const { state, effects, events, agentRequest } = runMachine.replay([
       { type: 'Dequeued' },
       { type: 'AgentFinished' },
       { type: 'ReviewFailed', findings: 'tests fail' },
