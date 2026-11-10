@@ -32,9 +32,8 @@ const opened = await openSandbox({
   runId: 'proof-agent',
   name: 'ktchn-proof-agent-r1',
   image: process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest',
-  volume: true,
+  kind: 'agent',
   home,
-  piEnv: true,
   network: false,
 });
 await seed(opened, {
@@ -44,7 +43,7 @@ await seed(opened, {
 });
 try {
   const out: string[] = [];
-  await opened.env?.exec(
+  await opened.env.exec(
     'env',
     { onOutput: (chunk) => out.push(chunk) },
     BACKGROUND_CONTEXT
@@ -56,7 +55,7 @@ try {
   const agent = await openAgent({
     runId: 'proof',
     storePath: join(storeDir, 'session.sqlite'),
-    env: opened.env as NonNullable<typeof opened.env>,
+    env: opened.env,
     model: process.env.KTCHN_MODEL ?? DEFAULT_MODEL,
     job: {
       repo,

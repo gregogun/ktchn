@@ -107,17 +107,15 @@ const { shell, close } = buildShell({
   image,
   base,
   baseBranch,
-  openAgent: async ({ env }) => {
-    if (env === undefined) throw new Error('The agent sandbox has no pi-env');
-    return openAgent({
+  openAgent: async ({ env }) =>
+    openAgent({
       runId,
       storePath: join(home, 'sessions', `${runId}.sqlite`),
       env,
       model: job.model,
       job,
       apiKey,
-    });
-  },
+    }),
   report: (state) => {
     const cost = ledger
       .records(runId)

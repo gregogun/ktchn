@@ -20,6 +20,7 @@ import {
   PIDS_LIMIT,
   MAX_PACK_BYTES,
   openReviewSandbox,
+  sandboxSettings,
   seed,
   type Sandbox,
 } from './sandbox.ts';
@@ -330,7 +331,7 @@ describe('seed', () => {
 });
 
 describe('openReviewSandbox', () => {
-  test('opens a sandbox with no volume and no pi-env', async () => {
+  test('opens a review sandbox, seeds it from the commit and clears the ref', async () => {
     const w = world();
     const { sandbox, calls } = fakeSandbox(({ command }) =>
       command.startsWith('test -e') ? { exitCode: 1 } : { exitCode: 0 }
@@ -346,16 +347,58 @@ describe('openReviewSandbox', () => {
     );
 
     expect(got).toBe(sandbox);
-    expect(opened).toEqual([
-      expect.objectContaining({
-        volume: false,
-        piEnv: false,
-        network: false,
-        image: 'img',
-      }),
-    ]);
+    expect(opened).toEqual([expect.objectContaining({ kind: 'review' })]);
     expect(calls.some((c) => typeof c.opts.stdin === 'number')).toBe(true);
     expect(git(w.repo, 'for-each-ref', 'refs/ktchn')).toBe('');
+  });
+});
+
+describe('openReviewSandbox failures', () => {
+  test('closes the sandbox when the ref cannot be made', async () => {
+    const w = world();
+    const { sandbox } = fakeSandbox();
+    let closed = false;
+    sandbox.close = async () => {
+      closed = true;
+    };
+
+    await expect(
+      openReviewSandbox(
+        { runId: 'r', repo: w.repo, oid: 'a'.repeat(40), image: 'img' },
+        async () => sandbox
+      )
+    ).rejects.toThrow();
+
+    expect(closed).toBe(true);
+  });
+});
+
+describe('sandboxSettings', () => {
+  const base = { runId: 'r', name: 'n', image: 'img' };
+
+  test.each([
+    [
+      'an agent sandbox with the network Policy allows',
+      { ...base, kind: 'agent', home: '/h', network: true } as const,
+      { volume: { home: '/h' }, piEnv: true, network: true },
+    ],
+    [
+      'an agent sandbox with no network',
+      { ...base, kind: 'agent', home: '/h', network: false } as const,
+      { volume: { home: '/h' }, piEnv: true, network: false },
+    ],
+    [
+      'a collect sandbox',
+      { ...base, kind: 'collect', home: '/h' } as const,
+      { volume: { home: '/h' }, piEnv: false, network: false },
+    ],
+    [
+      'a review sandbox',
+      { ...base, kind: 'review' } as const,
+      { volume: undefined, piEnv: false, network: false },
+    ],
+  ])('gives %s its volume, pi-env and network', (_, opts, settings) => {
+    expect(sandboxSettings(opts)).toEqual(settings);
   });
 });
 

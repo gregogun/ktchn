@@ -61,12 +61,20 @@ Giving the owner the one commit review passed, as a branch in the project. It is
 _Avoid_: push, merge, publish, delivery
 
 **Sandbox**:
-The isolation boundary a run's agent works inside. It holds its own copy of the project, and the kitchen takes the agent's work out of it as a commit, never by reading its files.
+The isolation boundary a run's agent works inside, holding its own copy of the project that the kitchen takes work out of as a commit, never by reading its files. A run uses three kinds: the agent's sandbox, the collect sandbox and the review sandbox.
 _Avoid_: container, box, station, workspace
 
 **Round**:
 One stretch of the agent's work within a run, from being given the job or the reviewer's findings until it stops and its work goes to review.
 _Avoid_: turn, iteration, pass, attempt
+
+**Collect**:
+Taking a round's work out of the sandbox's copy and into the clone as a checked commit, once the agent has stopped. It happens in its own sandbox, the collect sandbox, which has no agent tools and no network.
+_Avoid_: extract, harvest, export, sync
+
+**Run resources**:
+Everything a run keeps on the owner's machine outside the project: its clone, its sandboxes and the sandboxes' copy of the project.
+_Avoid_: workspace, state, artifacts
 
 **Workflow**:
 How to do one kind of work, and what done looks like for it.
