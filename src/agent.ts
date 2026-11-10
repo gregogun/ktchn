@@ -9,7 +9,12 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from '@earendil-works/pi-durable/tools';
 import type { RemoteExecutionEnv } from '@earendil-works/pi-env';
 import type { AgentOutcome } from './driver.ts';
-import type { AgentRequest, FreshAgentInput, ModelCall } from './ledger.ts';
+import type {
+  AgentRequest,
+  FreshAgentInput,
+  Job,
+  ModelCall,
+} from './ledger.ts';
 import { boundAgentEnv } from './agent-env.ts';
 import { COPY_PATH } from './box-scripts.ts';
 
@@ -32,11 +37,29 @@ export const readOpenRouterKey = (): string => {
   return key;
 };
 
-const prompt = (input: FreshAgentInput, jobText: string) => {
+type PromptJob = Pick<Job, 'text' | 'policy' | 'checks'>;
+
+const sandboxBriefing = (job: PromptJob) => [
+  job.policy.network
+    ? 'This sandbox has network access.'
+    : 'This sandbox has no network, so nothing can be downloaded.',
+  ...(job.checks.length === 0
+    ? []
+    : [
+        'After your work, the kitchen runs these checks. They work in this sandbox as it is, so run them yourself first:',
+        ...job.checks.map((command) => `- ${command}`),
+      ]),
+  'The project commit hooks may run when you commit. If a hook refuses the commit, fix what it reports and commit again. Never use --no-verify.',
+  'Commit once your own check of the goal passes.',
+];
+
+export const prompt = (input: FreshAgentInput, job: PromptJob) => {
   switch (input.kind) {
     case 'job':
       return [
-        jobText,
+        job.text,
+        '',
+        ...sandboxBriefing(job),
         '',
         'Work in the current directory. Commit your work on the current branch when you are done. Do not push, and do not move or switch branches.',
       ].join('\n');
@@ -80,7 +103,7 @@ export const openAgent = async (opts: {
   storePath: string;
   env: RemoteExecutionEnv;
   model: string;
-  jobText: string;
+  job: Job;
   apiKey: string;
 }) => {
   const { apiKey } = opts;
@@ -130,7 +153,7 @@ export const openAgent = async (opts: {
       const submission = await root.submit(
         {
           type: 'input',
-          content: prompt(input, opts.jobText),
+          content: prompt(input, opts.job),
           requestId: `${opts.runId}:${number}`,
         },
         ctx

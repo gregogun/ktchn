@@ -114,7 +114,7 @@ const { shell, close } = buildShell({
       storePath: join(home, 'sessions', `${runId}.sqlite`),
       env,
       model: job.model,
-      jobText: job.text,
+      job,
       apiKey,
     });
   },
