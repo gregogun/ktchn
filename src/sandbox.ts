@@ -31,6 +31,9 @@ import {
   volumeName,
 } from './run-resources.ts';
 
+export const DEFAULT_SANDBOX_IMAGE =
+  process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
+
 const PI_ENV_DIR = '/opt/pi-env';
 const REVIEW_REF = 'refs/ktchn/review';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;

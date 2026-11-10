@@ -9,6 +9,7 @@ import { openLedger } from './ledger.ts';
 import { checkCanOpenPr, originBase } from './pr.ts';
 import { isTerminal } from './run-machine.ts';
 import { sweepFinishedRuns, sweepOrphanVolumes } from './run-resources.ts';
+import { DEFAULT_SANDBOX_IMAGE } from './sandbox.ts';
 import { buildShell } from './shell.ts';
 
 const usage =
@@ -38,7 +39,6 @@ const { runId, job } = makeJob({
   policy: { network: values.network },
 });
 
-const image = process.env.KTCHN_IMAGE ?? 'ktchn-sandbox:latest';
 const home = process.env.KTCHN_HOME ?? join(homedir(), '.ktchn');
 mkdirSync(join(home, 'sessions'), { recursive: true });
 const ledger = openLedger(join(home, 'ledger.sqlite'));
@@ -104,7 +104,7 @@ const { shell, close } = buildShell({
   home,
   runId,
   job,
-  image,
+  image: DEFAULT_SANDBOX_IMAGE,
   base,
   baseBranch,
   openAgent: async ({ env }) =>
