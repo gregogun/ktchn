@@ -1,7 +1,8 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { driveRun } from '../src/driver.ts';
-import { openLedger, type Job } from '../src/ledger.ts';
+import type { Job } from '../src/job.ts';
+import { openLedger } from '../src/ledger.ts';
 import { buildShell } from '../src/shell.ts';
 
 const { home, runId, job, image, base, ready } = JSON.parse(

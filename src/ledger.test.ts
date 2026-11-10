@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { openLedger, type Job } from './ledger.ts';
+import type { Job } from './job.ts';
+import { openLedger } from './ledger.ts';
 
 const job: Job = {
   repo: '/repo',
@@ -12,12 +13,12 @@ const job: Job = {
 };
 
 describe('ledger', () => {
-  test('a run with no events is queued with its job', () => {
+  test('a started run keeps its job and base and has no events yet', () => {
     const ledger = openLedger(':memory:');
     ledger.startRun('run-1', job, 'abc', 'main');
     expect(ledger.job('run-1')).toEqual(job);
     expect(ledger.base('run-1')).toBe('abc');
-    expect(ledger.replay('run-1').state.status).toBe('queued');
+    expect(ledger.events('run-1')).toEqual([]);
   });
 
   test('a resumed run keeps the base it started from', () => {
@@ -28,24 +29,28 @@ describe('ledger', () => {
     expect(ledger.baseBranch('run-1')).toBe('main');
   });
 
-  test('run state is the events replayed through the run machine', () => {
+  test('a run gives back its events in the order they were appended', () => {
     const ledger = openLedger(':memory:');
     ledger.appendEvent('run-1', 0, { type: 'Dequeued' });
+    ledger.recordModelCall('run-1', {
+      entryId: 1,
+      model: 'anthropic/claude-haiku-4.5',
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cost: 0,
+    });
     ledger.appendEvent('run-1', 1, { type: 'AgentFinished' });
     ledger.appendEvent('run-1', 2, {
       type: 'ReviewFailed',
       findings: 'tests fail',
     });
-    const { state, effects, events, agentRequest } = ledger.replay('run-1');
-    expect(state).toMatchObject({ status: 'running', reviewsLeft: 2 });
-    expect(effects).toEqual([
-      { type: 'RunAgent', input: { kind: 'findings', findings: 'tests fail' } },
+    expect(ledger.events('run-1')).toEqual([
+      { type: 'Dequeued' },
+      { type: 'AgentFinished' },
+      { type: 'ReviewFailed', findings: 'tests fail' },
     ]);
-    expect(events).toBe(3);
-    expect(agentRequest).toEqual({
-      input: { kind: 'findings', findings: 'tests fail' },
-      number: 2,
-    });
   });
 
   test('a second event decided from the same position is ignored', () => {
@@ -55,7 +60,7 @@ describe('ledger', () => {
     expect(ledger.appendEvent('run-1', 0, { type: 'OwnerCancelled' })).toBe(
       false
     );
-    expect(ledger.replay('run-1').state.status).toBe('running');
+    expect(ledger.events('run-1')).toEqual([{ type: 'Dequeued' }]);
   });
 
   test('runs keep separate records and model calls are kept once', () => {
@@ -73,7 +78,8 @@ describe('ledger', () => {
     ledger.recordModelCall('run-1', call);
     ledger.appendEvent('run-2', 0, { type: 'Dequeued' });
     expect(ledger.records('run-1')).toEqual([{ kind: 'model_call', call }]);
-    expect(ledger.replay('run-1').state.status).toBe('queued');
+    expect(ledger.events('run-1')).toEqual([]);
+    expect(ledger.events('run-2')).toEqual([{ type: 'Dequeued' }]);
   });
 
   test('the record survives reopening the file', () => {
@@ -81,7 +87,7 @@ describe('ledger', () => {
     const first = openLedger(path);
     first.appendEvent('run-1', 0, { type: 'Dequeued' });
     first.close();
-    expect(openLedger(path).replay('run-1').state.status).toBe('running');
+    expect(openLedger(path).events('run-1')).toEqual([{ type: 'Dequeued' }]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { prompt, readOpenRouterKey } from './agent.ts';
-import type { Job } from './ledger.ts';
+import type { Job } from './job.ts';
 import { prText } from './pr.ts';
 
 describe('readOpenRouterKey', () => {

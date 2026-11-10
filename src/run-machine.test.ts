@@ -382,3 +382,30 @@ describe('ended runs', () => {
     }
   });
 });
+
+describe('replay', () => {
+  test('a run with no events is queued with its job', () => {
+    const { state, effects, events, agentRequest } = runMachine.replay([]);
+    expect(state).toEqual(queued());
+    expect(effects).toEqual([]);
+    expect(events).toBe(0);
+    expect(agentRequest).toBeUndefined();
+  });
+
+  test('run state is the events replayed through the run machine', () => {
+    const { state, effects, events, agentRequest } = runMachine.replay([
+      { type: 'Dequeued' },
+      { type: 'AgentFinished' },
+      { type: 'ReviewFailed', findings: 'tests fail' },
+    ]);
+    expect(state).toMatchObject({ status: 'running', reviewsLeft: 2 });
+    expect(effects).toEqual([
+      { type: 'RunAgent', input: { kind: 'findings', findings: 'tests fail' } },
+    ]);
+    expect(events).toBe(3);
+    expect(agentRequest).toEqual({
+      input: { kind: 'findings', findings: 'tests fail' },
+      number: 2,
+    });
+  });
+});

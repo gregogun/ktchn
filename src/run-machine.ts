@@ -115,7 +115,7 @@ const TERMINAL = ['done', 'failed', 'cancelled'];
 
 export const isTerminal = (state: RunState) => TERMINAL.includes(state.status);
 
-export const newRun: RunState = {
+const newRun: RunState = {
   status: 'queued',
   input: { kind: 'job' },
   reviewsLeft: REVIEWS_PER_RUN,
@@ -307,4 +307,33 @@ export const transition = (
     state,
     effects: [],
   };
+};
+
+export type FreshAgentInput = Exclude<AgentInput, { kind: 'resume' }>;
+
+export type AgentRequest = { input: FreshAgentInput; number: number };
+
+type Replay = {
+  state: RunState;
+  effects: readonly Effect[];
+  events: number;
+  agentRequest: AgentRequest | undefined;
+};
+
+export const replay = (events: readonly RunEvent[]): Replay => {
+  let state: RunState = newRun;
+  let effects: readonly Effect[] = [];
+  let agentRequest: AgentRequest | undefined;
+  for (const event of events) {
+    ({ state, effects } = transition(state, event));
+    for (const effect of effects) {
+      if (effect.type === 'RunAgent' && effect.input.kind !== 'resume') {
+        agentRequest = {
+          input: effect.input,
+          number: (agentRequest?.number ?? 0) + 1,
+        };
+      }
+    }
+  }
+  return { state, effects, events: events.length, agentRequest };
 };

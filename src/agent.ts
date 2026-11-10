@@ -8,15 +8,19 @@ import { createRegistry, Harness } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { CodingTools } from '@earendil-works/pi-durable/tools';
 import type { RemoteExecutionEnv } from '@earendil-works/pi-env';
-import type { AgentOutcome } from './driver.ts';
-import type {
-  AgentRequest,
-  FreshAgentInput,
-  Job,
-  ModelCall,
-} from './ledger.ts';
+import type { ModelCall } from './ledger.ts';
 import { boundAgentEnv } from './agent-env.ts';
 import { COPY_PATH } from './box-scripts.ts';
+import type { Job } from './job.ts';
+import type { AgentRequest, FreshAgentInput, RunEvent } from './run-machine.ts';
+
+export type AgentOutcome = {
+  event: Extract<
+    RunEvent,
+    { type: 'AgentFinished' | 'AgentAsked' | 'AgentEndedEarly' }
+  >;
+  calls: readonly ModelCall[];
+};
 
 export const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash-0731';
 const MAX_TURNS = 40;

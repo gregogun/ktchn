@@ -1,9 +1,19 @@
-import type { ReviewOutcome } from './driver.ts';
 import { hostFindings } from './host-review.ts';
-import type { CheckResult } from './ledger.ts';
+import type { RunEvent } from './run-machine.ts';
 import { EXEC_TIMEOUT_MS, openReviewSandbox, type Sandbox } from './sandbox.ts';
 
 const OUTPUT_TAIL = 4000;
+
+export type CheckResult = {
+  command: string;
+  exitCode: number;
+  output: string;
+};
+
+export type ReviewOutcome = {
+  event: Extract<RunEvent, { type: 'ReviewPassed' | 'ReviewFailed' }>;
+  results: readonly CheckResult[];
+};
 
 export const reviewOutcome = (
   results: readonly CheckResult[],

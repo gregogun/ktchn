@@ -1,24 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import {
-  newRun,
-  type AgentInput,
-  transition,
-  type Effect,
-  type RunEvent,
-  type RunState,
-} from './run-machine.ts';
-
-export type Policy = { network: boolean };
-
-export type Job = {
-  policy: Policy;
-  repo: string;
-  branch: string;
-  text: string;
-  checks: readonly string[];
-  allowPaths: readonly string[];
-  model: string;
-};
+import type { Job } from './job.ts';
+import type { CheckResult } from './review.ts';
+import type { RunEvent } from './run-machine.ts';
 
 export type ModelCall = {
   entryId: number;
@@ -30,46 +13,11 @@ export type ModelCall = {
   cost: number;
 };
 
-export type CheckResult = {
-  command: string;
-  exitCode: number;
-  output: string;
-};
-
 export type LedgerRecord =
   | { kind: 'run_started'; job: Job; base: string; baseBranch: string }
   | { kind: 'run_event'; event: RunEvent }
   | { kind: 'model_call'; call: ModelCall }
   | { kind: 'checks_ran'; results: readonly CheckResult[] };
-
-export type FreshAgentInput = Exclude<AgentInput, { kind: 'resume' }>;
-
-export type AgentRequest = { input: FreshAgentInput; number: number };
-
-type Replay = {
-  state: RunState;
-  effects: readonly Effect[];
-  events: number;
-  agentRequest: AgentRequest | undefined;
-};
-
-const replay = (events: readonly RunEvent[]): Replay => {
-  let state = newRun;
-  let effects: readonly Effect[] = [];
-  let agentRequest: AgentRequest | undefined;
-  for (const event of events) {
-    ({ state, effects } = transition(state, event));
-    for (const effect of effects) {
-      if (effect.type === 'RunAgent' && effect.input.kind !== 'resume') {
-        agentRequest = {
-          input: effect.input,
-          number: (agentRequest?.number ?? 0) + 1,
-        };
-      }
-    }
-  }
-  return { state, effects, events: events.length, agentRequest };
-};
 
 const pidAlive = (pid: number) => {
   try {
@@ -167,10 +115,8 @@ export const openLedger = (path: string) => {
     releaseLease: (runId: string, pid: number = process.pid) => {
       dropLease.run(runId, pid);
     },
-    replay: (runId: string) =>
-      replay(
-        records(runId).flatMap((r) => (r.kind === 'run_event' ? [r.event] : []))
-      ),
+    events: (runId: string): RunEvent[] =>
+      records(runId).flatMap((r) => (r.kind === 'run_event' ? [r.event] : [])),
     close: () => db.close(),
   };
 };

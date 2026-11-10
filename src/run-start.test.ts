@@ -2,11 +2,11 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import type { AgentOutcome } from './driver.ts';
+import type { AgentOutcome } from './agent.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
 import { prepareRun, type RunPreparation } from './run-start.ts';
-import type { RunState } from './run-machine.ts';
+import { replay, type RunState } from './run-machine.ts';
 import type { AgentSession } from './shell.ts';
 import { git } from './test-git.ts';
 import { fakeAgentSandbox } from './test-sandbox.ts';
@@ -300,7 +300,7 @@ describe('drive', () => {
     expect(end.status === 'pr_not_opened' && end.error).not.toBe('');
     expect(leaseIsFree(w)).toBe(true);
     const ledger = w.seed();
-    expect(ledger.replay(w.runId).state).toMatchObject({
+    expect(replay(ledger.events(w.runId)).state).toMatchObject({
       status: 'in_review',
       step: 'opening_pr',
     });

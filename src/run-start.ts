@@ -2,10 +2,11 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { openAgent, readOpenRouterKey } from './agent.ts';
 import { driveRun } from './driver.ts';
-import { type Job, type Ledger, openLedger } from './ledger.ts';
+import type { Job } from './job.ts';
+import { type Ledger, openLedger } from './ledger.ts';
 import { checkCanOpenPr, originBase } from './pr.ts';
 import type { reviewRun } from './review.ts';
-import { isTerminal, type RunState } from './run-machine.ts';
+import { isTerminal, replay, type RunState } from './run-machine.ts';
 import { sweepFinishedRuns, sweepOrphanVolumes } from './run-resources.ts';
 import { SANDBOX_IMAGE } from './sandbox.ts';
 import { buildShell, type SandboxPort } from './shell.ts';
@@ -83,7 +84,7 @@ export const prepareRun = async (opts: {
       const lease = ledger.acquireLease(runId);
       if (!lease.held) return { status: 'held', sweeps, pid: lease.pid };
 
-      const before = ledger.replay(runId).state;
+      const before = replay(ledger.events(runId)).state;
       if (before.status === 'done') {
         return { status: 'already_done', sweeps, pr: before.pr };
       }
@@ -144,7 +145,7 @@ export const prepareRun = async (opts: {
             await driveRun(ledger, runId, built.shell);
             return { status: 'finished' };
           } catch (error) {
-            const state = ledger.replay(runId).state;
+            const state = replay(ledger.events(runId)).state;
             if (state.status !== 'in_review' || state.step !== 'opening_pr') {
               throw error;
             }

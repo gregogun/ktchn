@@ -2,7 +2,7 @@ import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { docker } from './docker.ts';
 import type { Ledger } from './ledger.ts';
-import { isTerminal } from './run-machine.ts';
+import { isTerminal, replay } from './run-machine.ts';
 import type { SandboxOpts } from './sandbox.ts';
 
 export const RUN_LABEL = 'ktchn.run';
@@ -107,7 +107,7 @@ export const sweepFinishedRuns = (
         removeSandboxesOf(runId);
         removeRun(home, runId);
       },
-      () => isTerminal(ledger.replay(runId).state)
+      () => isTerminal(replay(ledger.events(runId)).state)
     );
   }
   return sweep;
