@@ -42,12 +42,11 @@ type PromptJob = Pick<Job, 'text' | 'policy' | 'checks'>;
 const sandboxBriefing = (job: PromptJob) => [
   job.policy.network
     ? 'This sandbox has network access.'
-    : 'This sandbox has no network, so nothing can be installed.',
-  'Only what the image provides is installed.',
+    : 'This sandbox has no network, so nothing can be downloaded.',
   ...(job.checks.length === 0
     ? []
     : [
-        'After your work, the kitchen runs these checks. Run them yourself first:',
+        'After your work, the kitchen runs these checks. They work in this sandbox as it is, so run them yourself first:',
         ...job.checks.map((command) => `- ${command}`),
       ]),
   'The project commit hooks may run when you commit. If a hook refuses the commit, fix what it reports and commit again. Never use --no-verify.',

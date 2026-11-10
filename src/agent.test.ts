@@ -33,9 +33,11 @@ describe('the first prompt', () => {
   test('says there is no network, lists the checks and gives the hook and commit instructions', () => {
     const text = first(false);
     expect(text.startsWith('Fix the token bug')).toBe(true);
-    expect(text).toContain('no network');
+    expect(text).toContain('no network, so nothing can be downloaded');
+    expect(text).not.toContain('installed');
     expect(text).toContain('- pnpm test');
     expect(text).toContain('- pnpm lint');
+    expect(text).toContain('so run them yourself first:');
     expect(text).toContain('hook');
     expect(text).toContain('--no-verify');
     expect(text).toContain('Commit once');
