@@ -420,8 +420,8 @@ export const openReviewSandbox = async (
     image: opts.image,
     kind: 'review',
   });
-  git(opts.repo, ['update-ref', '--end-of-options', REVIEW_REF, opts.oid]);
   try {
+    git(opts.repo, ['update-ref', '--end-of-options', REVIEW_REF, opts.oid]);
     await seed(sandbox, { repo: opts.repo, ref: REVIEW_REF });
     return sandbox;
   } catch (error) {

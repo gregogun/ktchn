@@ -353,6 +353,26 @@ describe('openReviewSandbox', () => {
   });
 });
 
+describe('openReviewSandbox failures', () => {
+  test('closes the sandbox when the ref cannot be made', async () => {
+    const w = world();
+    const { sandbox } = fakeSandbox();
+    let closed = false;
+    sandbox.close = async () => {
+      closed = true;
+    };
+
+    await expect(
+      openReviewSandbox(
+        { runId: 'r', repo: w.repo, oid: 'a'.repeat(40), image: 'img' },
+        async () => sandbox
+      )
+    ).rejects.toThrow();
+
+    expect(closed).toBe(true);
+  });
+});
+
 describe('sandboxSettings', () => {
   const base = { runId: 'r', name: 'n', image: 'img' };
 
