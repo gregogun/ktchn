@@ -16,6 +16,18 @@ describe('readOpenRouterKey', () => {
     expect(process.env.OPENROUTER_API_KEY).toBeUndefined();
     expect(Object.values(process.env)).not.toContain('sk-or-test');
   });
+
+  test('tells the owner to sign in when no auth file exists, without a raw ENOENT', () => {
+    expect(() => readOpenRouterKey()).toThrow(
+      /no OpenRouter key found in .*sign in with pi first/i
+    );
+    try {
+      readOpenRouterKey();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).not.toMatch(/ENOENT/);
+    }
+  });
 });
 
 describe('the first prompt', () => {

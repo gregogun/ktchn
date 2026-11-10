@@ -85,20 +85,27 @@ export const originBase = (repo: string, bin = 'gh') => {
     throw new Error(`${slug} has no default branch to base a run on.`);
   }
   checkRefName(name);
-  git(
-    repo,
-    [
-      '-c',
-      'core.hooksPath=/dev/null',
-      'fetch',
-      '--quiet',
-      '--no-tags',
-      '--no-recurse-submodules',
-      'origin',
-      `refs/heads/${name}`,
-    ],
-    { scope: 'owner' }
-  );
+  try {
+    git(
+      repo,
+      [
+        '-c',
+        'core.hooksPath=/dev/null',
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        '--no-recurse-submodules',
+        'origin',
+        `refs/heads/${name}`,
+      ],
+      { scope: 'owner' }
+    );
+  } catch (error) {
+    throw new Error(
+      `could not fetch ${slug}'s default branch (${name}) from origin to base the run on: ${stderrOf(error)}`,
+      { cause: error }
+    );
+  }
   return {
     base: git(repo, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'], {
       scope: 'owner',

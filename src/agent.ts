@@ -29,9 +29,21 @@ export const readOpenRouterKey = (): string => {
   const fromEnv = process.env.OPENROUTER_API_KEY;
   delete process.env.OPENROUTER_API_KEY;
   if (fromEnv) return fromEnv;
-  const auth = JSON.parse(
-    readFileSync(join(homedir(), '.pi/agent/auth.json'), 'utf8')
-  ) as { openrouter?: { key?: unknown } };
+  const authPath = join(homedir(), '.pi/agent/auth.json');
+  let auth: { openrouter?: { key?: unknown } };
+  try {
+    auth = JSON.parse(readFileSync(authPath, 'utf8')) as {
+      openrouter?: { key?: unknown };
+    };
+  } catch (error) {
+    if ((error as { code?: unknown }).code === 'ENOENT') {
+      throw new Error(
+        `no OpenRouter key found in ${authPath}; sign in with pi first`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
   const key = auth.openrouter?.key;
   if (typeof key !== 'string' || key === '') {
     throw new Error(
