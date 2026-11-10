@@ -19,7 +19,6 @@ export type SandboxPort = {
   removeAll: typeof removeSandboxes;
   seed: typeof seed;
   collect: typeof collect;
-  review: typeof reviewRun;
 };
 
 export const realSandboxes: SandboxPort = {
@@ -27,7 +26,6 @@ export const realSandboxes: SandboxPort = {
   removeAll: removeSandboxes,
   seed,
   collect,
-  review: reviewRun,
 };
 
 export type AgentSession = {
@@ -45,10 +43,12 @@ export const buildShell = (opts: {
   openAgent: (sandbox: Sandbox) => Promise<AgentSession>;
   report: (state: RunState) => void;
   sandboxes?: SandboxPort;
+  review?: typeof reviewRun;
   gh?: string;
 }) => {
   const { job, runId } = opts;
   const sandboxes = opts.sandboxes ?? realSandboxes;
+  const review = opts.review ?? reviewRun;
   let clone: string | undefined;
   let open: { sandbox: Sandbox; round: number | 'collect' } | undefined;
   let agent: AgentSession | undefined;
@@ -126,7 +126,7 @@ export const buildShell = (opts: {
       } finally {
         await closeRound();
       }
-      return sandboxes.review({
+      return review({
         runId,
         repo: theClone(),
         branch: job.branch,

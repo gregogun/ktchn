@@ -13,6 +13,7 @@ import { runDir } from './clone.ts';
 import type { Job } from './ledger.ts';
 import { makeJob } from './job.ts';
 import { CollectRefused } from './sandbox.ts';
+import type { reviewRun } from './review.ts';
 import { buildShell, type SandboxPort } from './shell.ts';
 import { git } from './test-git.ts';
 import { fakeSandbox } from './test-sandbox.ts';
@@ -46,16 +47,19 @@ const recorder = (events: string[], network: boolean[] = []) => {
       events.push('collect');
       return { oid: 'a'.repeat(40), dirty: '' };
     },
-    review: async () => {
-      events.push('review');
-      return {
-        event: { type: 'ReviewPassed' as const, oid: 'a'.repeat(40) },
-        results: [],
-      };
-    },
   };
   return ports;
 };
+
+const reviewer =
+  (events: string[]): typeof reviewRun =>
+  async () => {
+    events.push('review');
+    return {
+      event: { type: 'ReviewPassed', oid: 'a'.repeat(40) },
+      results: [],
+    };
+  };
 
 const makeTempRepo = () => {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-shell-repo-')));
@@ -153,6 +157,7 @@ describe('buildShell', () => {
       }),
       report: () => {},
       sandboxes: recorder(events),
+      review: reviewer(events),
     });
     await shell.runReview();
     expect(events).toEqual([
@@ -183,6 +188,7 @@ describe('buildShell', () => {
       }),
       report: () => {},
       sandboxes: recorder(events, network),
+      review: reviewer(events),
     });
     await shell.runAgent({ input: { kind: 'job' } as never, number: 1 });
     events.length = 0;
