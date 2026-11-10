@@ -113,7 +113,7 @@ describe.each([
     const swept = sweep(home, ledger, ['a', 'b', 'c'], (runId) => {
       if (runId === 'b') throw new Error('docker is not answering');
     });
-    expect(swept.removed).toEqual(['a', 'c']);
+    expect(swept.removed.sort()).toEqual(['a', 'c']);
     expect(swept.failed).toEqual([
       { runId: 'b', error: expect.stringContaining('docker is not answering') },
     ]);

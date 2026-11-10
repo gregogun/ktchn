@@ -3,12 +3,14 @@ import { join } from 'node:path';
 import { docker } from './docker.ts';
 import type { Ledger } from './ledger.ts';
 import { isTerminal } from './run-machine.ts';
+import type { SandboxOpts } from './sandbox.ts';
 
 export const RUN_LABEL = 'ktchn.run';
 export const HOME_LABEL = 'ktchn.home';
 
-export type SandboxKind =
-  { kind: 'agent'; round: number } | { kind: 'collect' } | { kind: 'review' };
+type SandboxKind =
+  | { kind: 'agent'; round: number }
+  | { kind: Exclude<SandboxOpts['kind'], 'agent'> };
 
 export const runDir = (home: string, runId: string) =>
   join(home, 'runs', runId);
@@ -23,7 +25,7 @@ export const sandboxName = (runId: string, sandbox: SandboxKind) =>
 export const removeRun = (home: string, runId: string) =>
   rmSync(runDir(home, runId), { recursive: true, force: true });
 
-export const listVolumes = (): {
+const listVolumes = (): {
   runId: string;
   volume: string;
   home: string;
