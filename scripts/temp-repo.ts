@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { RUN_LABEL } from '../src/run-resources.ts';
 
 export const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -27,7 +28,7 @@ export const ktchnLeftovers = () => {
       'ps',
       '-a',
       '--filter',
-      'label=ktchn.run',
+      `label=${RUN_LABEL}`,
       '--format',
       '{{.Names}}',
     ]),
@@ -35,7 +36,7 @@ export const ktchnLeftovers = () => {
       'volume',
       'ls',
       '--filter',
-      'label=ktchn.run',
+      `label=${RUN_LABEL}`,
       '--format',
       '{{.Name}}',
     ]),

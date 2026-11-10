@@ -10,11 +10,9 @@ import { checkRefName, copyCommit, git, tryGit } from './git.ts';
 import type { Ledger } from './ledger.ts';
 import { listVolumes, removeSandboxes } from './sandbox.ts';
 import { isTerminal } from './run-machine.ts';
+import { runDir } from './run-resources.ts';
 
 const ZERO_OID = '0'.repeat(40);
-
-export const runDir = (home: string, runId: string) =>
-  join(home, 'runs', runId);
 
 export const ensureClone = (opts: {
   home: string;

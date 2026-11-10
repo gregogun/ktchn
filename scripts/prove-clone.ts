@@ -14,11 +14,18 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MODEL } from '../src/agent.ts';
-import { runDir, sweepFinishedRuns, sweepOrphanVolumes } from '../src/clone.ts';
+import { sweepFinishedRuns, sweepOrphanVolumes } from '../src/clone.ts';
 import { driveRun, type AgentOutcome } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { seedScript } from '../src/box-scripts.ts';
 import { openLedger } from '../src/ledger.ts';
+import {
+  HOME_LABEL,
+  RUN_LABEL,
+  runDir,
+  sandboxName,
+  volumeName,
+} from '../src/run-resources.ts';
 import { removeSandboxes, type Sandbox } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
@@ -76,9 +83,13 @@ const fingerprint = (repo: string) => {
 };
 
 const runContainers = (runId: string) =>
-  execFileSync('docker', ['ps', '-q', '--filter', `label=ktchn.run=${runId}`], {
-    encoding: 'utf8',
-  })
+  execFileSync(
+    'docker',
+    ['ps', '-q', '--filter', `label=${RUN_LABEL}=${runId}`],
+    {
+      encoding: 'utf8',
+    }
+  )
     .split('\n')
     .filter(Boolean);
 
@@ -228,7 +239,7 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   console.log('  owner refs after:\n' + after.refs.replace(/^/gm, '    '));
   assert.equal(state.status, 'in_review');
   assert(
-    !ktchnLeftovers().volumes.includes(`ktchn-${w.runId}`),
+    !ktchnLeftovers().volumes.includes(volumeName(w.runId)),
     'a handed-off run keeps no volume'
   );
   assert(
@@ -405,7 +416,7 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
   assert.equal(parked.status, 'parked');
   assert(existsSync(w.clone), 'a parked run keeps its clone');
   const volumes = () =>
-    ktchnLeftovers().volumes.filter((v) => v === `ktchn-${w.runId}`);
+    ktchnLeftovers().volumes.filter((v) => v === volumeName(w.runId));
   assert.equal(volumes().length, 1, 'a parked run keeps its volume');
   console.log('  parked after reviews ran out; clone and volume kept');
 
@@ -553,7 +564,7 @@ const inspect = (name: string, format: string) =>
   const w = world('(k)', { checks: [`! ${FETCH}`] });
   await w.drive([
     async (s) => {
-      const name = `ktchn-${w.runId}-r1`;
+      const name = sandboxName(w.runId, { kind: 'agent', round: 1 });
       const mode = inspect(name, '{{.HostConfig.NetworkMode}}');
       const caps = inspect(name, '{{.HostConfig.CapDrop}}');
       const opt = inspect(name, '{{.HostConfig.SecurityOpt}}');
@@ -590,7 +601,7 @@ const inspect = (name: string, format: string) =>
   await w.drive([
     async (s) => {
       const mode = inspect(
-        `ktchn-${w.runId}-r1`,
+        sandboxName(w.runId, { kind: 'agent', round: 1 }),
         '{{.HostConfig.NetworkMode}}'
       );
       console.log(`  container network mode: ${mode}`);
@@ -656,12 +667,13 @@ const inspect = (name: string, format: string) =>
     'volume',
     'create',
     '--label',
-    'ktchn.run=orphanproof',
+    `${RUN_LABEL}=orphanproof`,
     '--label',
-    `ktchn.home=${home}`,
-    'ktchn-orphanproof',
+    `${HOME_LABEL}=${home}`,
+    volumeName('orphanproof'),
   ]);
-  const has = () => ktchnLeftovers().volumes.includes('ktchn-orphanproof');
+  const has = () =>
+    ktchnLeftovers().volumes.includes(volumeName('orphanproof'));
   assert(has(), 'the orphan exists');
   const swept = sweepOrphanVolumes(home, ledger);
   console.log('  swept:', JSON.stringify(swept));

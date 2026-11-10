@@ -12,12 +12,12 @@ import { afterEach, describe, expect, test } from 'vitest';
 import {
   ensureClone,
   handOff,
-  runDir,
   sweepFinishedRuns,
   sweepOrphanVolumes,
 } from './clone.ts';
 import { openLedger } from './ledger.ts';
 import { copyCommit } from './git.ts';
+import { runDir } from './run-resources.ts';
 import { git } from './test-git.ts';
 
 const dirs: string[] = [];
