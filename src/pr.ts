@@ -51,7 +51,7 @@ const githubRepo = (repo: string) => {
     );
   if (match?.[1] === undefined) {
     throw new Error(
-      `${repo}'s origin (${url.replace(/^(https?:\/\/)[^@]+@/, '$1')}) is not a GitHub URL, so a run could not open its PR.`
+      `${repo}'s origin (${url.replace(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^@]+@/, '$1')}) is not a GitHub URL, so a run could not open its PR.`
     );
   }
   return `github.com/${match[1]}`;
