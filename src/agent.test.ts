@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { prompt, readOpenRouterKey } from './agent.ts';
 import type { Job } from './job.ts';
 import { prText } from './pr.ts';
@@ -6,6 +9,7 @@ import { prText } from './pr.ts';
 describe('readOpenRouterKey', () => {
   const saved = process.env.OPENROUTER_API_KEY;
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (saved === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = saved;
   });
@@ -15,6 +19,14 @@ describe('readOpenRouterKey', () => {
     expect(readOpenRouterKey()).toBe('sk-or-test');
     expect(process.env.OPENROUTER_API_KEY).toBeUndefined();
     expect(Object.values(process.env)).not.toContain('sk-or-test');
+  });
+
+  test('tells the owner to sign in when no auth file exists, without a raw ENOENT', () => {
+    vi.stubEnv('HOME', mkdtempSync(join(tmpdir(), 'ktchn-home-')));
+    delete process.env.OPENROUTER_API_KEY;
+    expect(() => readOpenRouterKey()).toThrow(
+      /^(?!.*ENOENT).*no OpenRouter key found in .*sign in with pi first/is
+    );
   });
 });
 
