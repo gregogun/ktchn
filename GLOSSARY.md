@@ -1,6 +1,6 @@
 # ktchn
 
-ktchn is a software kitchen: one system where the owner hands over jobs and agents carry them out, with every result reviewed before it counts as done.
+ktchn is a system for agentic development. The owner hands over jobs, agents carry them out in sandboxes with only the context the kitchen gives them, and every result is reviewed before it counts as done.
 
 ## Language
 
@@ -13,6 +13,10 @@ _Avoid_: user, operator, chef
 **Agent**:
 The model that does a run's work inside the sandbox.
 _Avoid_: cook, worker, bot
+
+**Harness**:
+The software that runs an agent's model loop and its tools. The kitchen uses only a harness that lets it decide everything the agent is given.
+_Avoid_: runtime, agent framework
 
 **Chief of staff**:
 The conversational role that talks with the owner and turns what they say into kitchen actions. It never touches code.
@@ -62,7 +66,7 @@ _Avoid_: push, merge, publish, delivery
 
 **Sandbox**:
 The isolation boundary a run's agent works inside, holding its own copy of the project that the kitchen takes work out of as a commit, never by reading its files. A run uses three kinds: the agent's sandbox, the collect sandbox and the review sandbox.
-_Avoid_: container, box, station, workspace
+_Avoid_: container, box, station, workspace, runner
 
 **Round**:
 One stretch of the agent's work within a run, from being given the job or the reviewer's findings until it stops and its work goes to review.
@@ -97,7 +101,7 @@ A piece of instruction text a workflow brings into an agent's context.
 _Avoid_: prompt, tool
 
 **Skill catalogue**:
-The collection of skills the kitchen draws from. It lives outside the kitchen.
+The skills the kitchen draws from, in whichever folders the owner points it at. It lives outside the kitchen.
 _Avoid_: skill stack, skill library
 
 ### Quality
