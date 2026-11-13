@@ -130,14 +130,15 @@ ledger_summary() {
     const db = new DatabaseSync(process.env.LEDGER, { readOnly: true });
     const runs = new Map();
     for (const row of db.prepare("SELECT run_id, record FROM ledger ORDER BY seq").all()) {
-      const run = runs.get(row.run_id) ?? { events: [], cost: 0, calls: 0 };
+      const run = runs.get(row.run_id) ?? { events: [], verdicts: [], cost: 0, calls: 0 };
       const r = JSON.parse(row.record);
       if (r.kind === "run_event") run.events.push(r.event.type);
+      if (r.kind === "reviewer_judged") run.verdicts.push(r.verdict.kind);
       if (r.kind === "model_call") { run.cost += r.call.cost; run.calls++; }
       runs.set(row.run_id, run);
     }
     for (const [id, r] of runs)
-      console.log(`run ${id}: ${r.events.join(" > ")}; ${r.calls} model calls, $${r.cost.toFixed(4)}`);
+      console.log(`run ${id}: ${r.events.join(" > ")}; reviewer: ${r.verdicts.join(", ") || "none"}; ${r.calls} model calls, $${r.cost.toFixed(4)}`);
   '
 }
 
