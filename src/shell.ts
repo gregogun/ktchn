@@ -4,6 +4,7 @@ import type { RunShell } from './driver.ts';
 import type { Job } from './job.ts';
 import { openPr, prText } from './pr.ts';
 import { reviewRun } from './review.ts';
+import type { Judge } from './reviewer.ts';
 import {
   collect,
   CollectRefused,
@@ -45,6 +46,7 @@ export const buildShell = (opts: {
   report: (state: RunState) => void;
   sandboxes?: SandboxPort;
   review?: typeof reviewRun;
+  judge: Judge;
   gh?: string;
 }) => {
   const { job, runId } = opts;
@@ -153,6 +155,8 @@ export const buildShell = (opts: {
         image: opts.image,
         checks: job.checks,
         allowPaths: job.allowPaths,
+        jobText: job.text,
+        judge: opts.judge,
       });
     },
     closeSandbox: closeRound,

@@ -36,7 +36,7 @@ Each feature file starts with an H1 title and one paragraph describing behavior 
 ## Features
 
 - [Hand over a job](./hand-over-job.md) covers a run from start through review, handoff and PR, plus restarting a finished job.
-- [Review findings](./review-findings.md) covers failing checks, protected paths, `--allow-path`, and parking when reviews run out.
+- [Review findings](./review-findings.md) covers failing checks, the reviewer's verdict, protected paths, `--allow-path`, and parking when reviews run out.
 - [Crash and restart](./crash-restart.md) covers a killed run carrying on from its sandbox, and the refusal of a second driver.
 - [Network policy](./network-policy.md) covers the sandbox network with and without `--network`.
 - [Start refusals](./start-refusals.md) covers the ways `start` declines a job before any model call.

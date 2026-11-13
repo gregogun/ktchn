@@ -1,4 +1,6 @@
+import { git } from './git.ts';
 import { hostFindings } from './host-review.ts';
+import type { Judge, Judgement } from './reviewer.ts';
 import type { RunEvent } from './run-machine.ts';
 import { EXEC_TIMEOUT_MS, openReviewSandbox, type Sandbox } from './sandbox.ts';
 
@@ -13,6 +15,7 @@ export type CheckResult = {
 export type ReviewOutcome = {
   event: Extract<RunEvent, { type: 'ReviewPassed' | 'ReviewFailed' }>;
   results: readonly CheckResult[];
+  judgement?: Judgement;
 };
 
 export const reviewOutcome = (
@@ -60,6 +63,28 @@ export const runChecks = async (
   return reviewOutcome(results, oid);
 };
 
+export const judgedOutcome = async (
+  checked: ReviewOutcome,
+  opts: { jobText: string; diff: () => string; judge: Judge }
+): Promise<ReviewOutcome> => {
+  if (checked.event.type !== 'ReviewPassed') return checked;
+  const judgement = await opts.judge({
+    jobText: opts.jobText,
+    diff: opts.diff(),
+    results: checked.results,
+  });
+  const { verdict } = judgement;
+  if (verdict.kind === 'pass') return { ...checked, judgement };
+  return {
+    event: {
+      type: 'ReviewFailed',
+      findings: `The reviewer judged that the work does not do what the job asked:\n\n${verdict.findings}`,
+    },
+    results: checked.results,
+    judgement,
+  };
+};
+
 export const reviewRun = async (opts: {
   runId: string;
   repo: string;
@@ -70,6 +95,8 @@ export const reviewRun = async (opts: {
   image: string;
   checks: readonly string[];
   allowPaths: readonly string[];
+  jobText: string;
+  judge: Judge;
 }): Promise<ReviewOutcome> => {
   const findings = hostFindings(opts);
   if (findings.length > 0) {
@@ -79,9 +106,15 @@ export const reviewRun = async (opts: {
     };
   }
   const fresh = await openReviewSandbox(opts);
+  let checked: ReviewOutcome;
   try {
-    return await runChecks(fresh, opts.checks, opts.oid);
+    checked = await runChecks(fresh, opts.checks, opts.oid);
   } finally {
     await fresh.close();
   }
+  return judgedOutcome(checked, {
+    jobText: opts.jobText,
+    diff: () => git(opts.repo, ['diff', opts.base, opts.oid]),
+    judge: opts.judge,
+  });
 };

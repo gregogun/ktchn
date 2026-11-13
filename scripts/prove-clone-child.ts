@@ -19,6 +19,7 @@ const { home, runId, job, image, base, ready } = JSON.parse(
 const ledger = openLedger(join(home, 'ledger.sqlite'));
 if (!ledger.acquireLease(runId).held) throw new Error('lease is taken');
 const { shell } = buildShell({
+  judge: async () => ({ model: 'none', verdict: { kind: 'pass' }, calls: [] }),
   home,
   runId,
   job,

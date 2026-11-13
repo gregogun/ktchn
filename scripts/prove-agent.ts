@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { DEFAULT_MODEL, openAgent, readOpenRouterKey } from '../src/agent.ts';
+import { DEFAULT_REVIEWER_MODEL } from '../src/reviewer.ts';
 import { ensureClone } from '../src/clone.ts';
 import { removeSandboxes, sandboxName } from '../src/run-resources.ts';
 import { collect, SANDBOX_IMAGE, openSandbox, seed } from '../src/sandbox.ts';
@@ -66,6 +67,7 @@ try {
       checks: [],
       allowPaths: [],
       model: process.env.KTCHN_MODEL ?? DEFAULT_MODEL,
+      reviewerModel: DEFAULT_REVIEWER_MODEL,
     },
     apiKey: readOpenRouterKey(),
   });

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { Job } from './job.ts';
+import type { Judge } from './reviewer.ts';
 import { makeJob } from './job.ts';
 import type { reviewRun } from './review.ts';
 import { runDir } from './run-resources.ts';
@@ -103,6 +104,12 @@ const makeTempRepo = () => {
   return repo;
 };
 
+const passingJudge: Judge = async () => ({
+  model: 'rm',
+  verdict: { kind: 'pass' },
+  calls: [],
+});
+
 const world = (policy: Job['policy']) => {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'ktchn-shell-')));
   dirs.push(home);
@@ -115,6 +122,7 @@ const world = (policy: Job['policy']) => {
     allowPaths: [],
     policy,
     model: 'm',
+    reviewerModel: 'rm',
   });
   return {
     home,
@@ -123,6 +131,7 @@ const world = (policy: Job['policy']) => {
     job,
     base: git(repo, 'rev-parse', 'HEAD'),
     baseBranch: 'main',
+    judge: passingJudge,
   };
 };
 

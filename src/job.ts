@@ -10,6 +10,7 @@ export type Job = {
   checks: readonly string[];
   allowPaths: readonly string[];
   model: string;
+  reviewerModel: string;
 };
 
 export const makeJob = (
@@ -22,6 +23,7 @@ export const makeJob = (
         spec.text,
         spec.checks,
         spec.model,
+        spec.reviewerModel,
         spec.allowPaths,
         spec.policy.network,
       ])

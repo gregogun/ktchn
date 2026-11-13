@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MODEL } from '../src/agent.ts';
 import type { AgentOutcome } from '../src/agent.ts';
+import { DEFAULT_REVIEWER_MODEL } from '../src/reviewer.ts';
 import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { seedScript } from '../src/box-scripts.ts';
@@ -114,6 +115,7 @@ const world = (
     allowPaths: opts.allowPaths ?? [],
     policy: { network: opts.network ?? false },
     model: DEFAULT_MODEL,
+    reviewerModel: DEFAULT_REVIEWER_MODEL,
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
   ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'), 'main');
@@ -124,6 +126,11 @@ const world = (
 
   const drive = async (rounds: Round[]) => {
     const { shell, close } = buildShell({
+      judge: async () => ({
+        model: 'none',
+        verdict: { kind: 'pass' },
+        calls: [],
+      }),
       home,
       runId,
       job,
@@ -452,6 +459,7 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
     allowPaths: [],
     policy: { network: false },
     model: DEFAULT_MODEL,
+    reviewerModel: DEFAULT_REVIEWER_MODEL,
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
   const first = spawn('sleep', ['60']);
