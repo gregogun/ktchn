@@ -1,13 +1,15 @@
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { DEFAULT_MODEL } from './agent.ts';
 import { makeJob } from './job.ts';
 import { prepareRun } from './run-start.ts';
+import { loadWorkflow } from './workflow.ts';
 
 const usage =
-  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--network]';
+  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--network] [--workflow <name>]';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -16,12 +18,28 @@ const { positionals, values } = parseArgs({
     'allow-path': { type: 'string', multiple: true, default: [] },
     model: { type: 'string', default: DEFAULT_MODEL },
     network: { type: 'boolean', default: false },
+    workflow: { type: 'string' },
   },
 });
 const [repoArg, text] = positionals;
 if (repoArg === undefined || text === undefined || positionals.length > 2) {
   console.error(usage);
   process.exit(2);
+}
+
+let workflow;
+if (values.workflow !== undefined) {
+  try {
+    workflow = loadWorkflow(values.workflow, {
+      dir: fileURLToPath(new URL('../workflows/', import.meta.url)),
+      catalogue: (process.env.KTCHN_SKILL_CATALOGUE ?? '')
+        .split(delimiter)
+        .filter((folder) => folder !== ''),
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
 
 const { runId, job } = makeJob({
@@ -31,6 +49,7 @@ const { runId, job } = makeJob({
   allowPaths: values['allow-path'],
   model: values.model,
   policy: { network: values.network },
+  workflow,
 });
 
 const home = process.env.KTCHN_HOME ?? join(homedir(), '.ktchn');
