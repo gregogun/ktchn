@@ -120,10 +120,14 @@ export const prepareRun = async (opts: {
             if (base === undefined || baseBranch === undefined) {
               throw new Error(`Run ${runId} has no recorded base branch`);
             }
+            const recorded = ledger.job(runId);
+            if (recorded === undefined) {
+              throw new Error(`Run ${runId} has no recorded job`);
+            }
             const built = buildShell({
               home,
               runId,
-              job,
+              job: recorded,
               image: SANDBOX_IMAGE,
               base,
               baseBranch,
@@ -132,8 +136,8 @@ export const prepareRun = async (opts: {
                   runId,
                   storePath: join(home, 'sessions', `${runId}.sqlite`),
                   env,
-                  model: job.model,
-                  job,
+                  model: recorded.model,
+                  job: recorded,
                   apiKey,
                 }),
               report: (state) =>

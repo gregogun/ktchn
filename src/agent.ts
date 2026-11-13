@@ -13,6 +13,7 @@ import { boundAgentEnv } from './agent-env.ts';
 import { COPY_PATH } from './box-scripts.ts';
 import type { Job } from './job.ts';
 import type { AgentRequest, FreshAgentInput, RunEvent } from './run-machine.ts';
+import type { Skill } from './workflow.ts';
 
 export type AgentOutcome = {
   event: Extract<
@@ -41,7 +42,10 @@ export const readOpenRouterKey = (): string => {
   return key;
 };
 
-type PromptJob = Pick<Job, 'text' | 'policy' | 'checks'>;
+type PromptJob = Pick<Job, 'text' | 'policy' | 'checks' | 'workflow'>;
+
+const skillBlocks = (skills: readonly Skill[]) =>
+  skills.map(({ name, text }) => `<skill name="${name}">\n${text}\n</skill>`);
 
 const sandboxBriefing = (job: PromptJob) => [
   job.policy.network
@@ -57,20 +61,26 @@ const sandboxBriefing = (job: PromptJob) => [
   'Commit once your own check of the goal passes.',
 ];
 
-export const prompt = (input: FreshAgentInput, job: PromptJob) => {
+export const prompt = (
+  input: FreshAgentInput,
+  job: PromptJob,
+  skills: readonly Skill[]
+) => {
+  const blocks = skillBlocks(skills);
+  const lead = blocks.length === 0 ? '' : `${blocks.join('\n\n')}\n\n`;
   switch (input.kind) {
     case 'job':
       return [
-        job.text,
+        `${job.workflow ? `${job.workflow.method}\n\n${lead}` : ''}${job.text}`,
         '',
         ...sandboxBriefing(job),
         '',
         'Work in the current directory. Commit your work on the current branch when you are done. Do not push, and do not move or switch branches.',
       ].join('\n');
     case 'findings':
-      return `Review's checks failed:\n\n${input.findings}\n\nFix the problems and commit on the current branch.`;
+      return `${lead}Review's checks failed:\n\n${input.findings}\n\nFix the problems and commit on the current branch.`;
     case 'answer':
-      return input.answer;
+      return `${lead}${input.answer}`;
   }
 };
 
@@ -153,11 +163,14 @@ export const openAgent = async (opts: {
   };
 
   return {
-    run: async ({ input, number }: AgentRequest): Promise<AgentOutcome> => {
+    run: async (
+      { input, number }: AgentRequest,
+      skills: readonly Skill[]
+    ): Promise<AgentOutcome> => {
       const submission = await root.submit(
         {
           type: 'input',
-          content: prompt(input, opts.job),
+          content: prompt(input, opts.job, skills),
           requestId: `${opts.runId}:${number}`,
         },
         ctx

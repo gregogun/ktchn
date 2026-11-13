@@ -35,6 +35,7 @@
     "@earendil-works/chord": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-durable": "1.5.0",
-    "@earendil-works/pi-env": "1.5.0"
+    "@earendil-works/pi-env": "1.5.0",
+    "yaml": "2.9.1"
   }
 }

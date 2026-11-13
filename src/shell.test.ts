@@ -140,7 +140,7 @@ describe('buildShell', () => {
         report: () => {},
         sandboxes: recorder(events, opened),
       });
-      await shell.runAgent(FIRST_ROUND);
+      await shell.runAgent(FIRST_ROUND, []);
       expect(events).toEqual([
         `remove ${w.runId} false`,
         'open agent',
@@ -162,8 +162,8 @@ describe('buildShell', () => {
       report: () => {},
       sandboxes: recorder(events),
     });
-    await shell.runAgent(FIRST_ROUND);
-    await shell.runAgent(FIRST_ROUND);
+    await shell.runAgent(FIRST_ROUND, []);
+    await shell.runAgent(FIRST_ROUND, []);
     expect(events).toEqual([
       `remove ${w.runId} false`,
       'open agent',
@@ -184,7 +184,7 @@ describe('buildShell', () => {
       report: () => {},
       sandboxes: recorder(events),
     });
-    await expect(shell.runAgent(FIRST_ROUND)).rejects.toThrow();
+    await expect(shell.runAgent(FIRST_ROUND, [])).rejects.toThrow();
     expect(events).toEqual([`remove ${w.runId} false`]);
   });
 
@@ -224,7 +224,7 @@ describe('buildShell', () => {
       sandboxes: recorder(events, opened),
       review: reviewer(events),
     });
-    await shell.runAgent(FIRST_ROUND);
+    await shell.runAgent(FIRST_ROUND, []);
     events.length = 0;
     await shell.runReview();
     expect(events).toEqual([

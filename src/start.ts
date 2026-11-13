@@ -1,13 +1,16 @@
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { DEFAULT_MODEL } from './agent.ts';
-import { makeJob } from './job.ts';
+import { makeJob, runIdOf } from './job.ts';
+import { openLedger } from './ledger.ts';
 import { prepareRun } from './run-start.ts';
+import { loadWorkflow } from './workflow.ts';
 
 const usage =
-  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--network]';
+  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--network] [--workflow <name>]';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -16,6 +19,7 @@ const { positionals, values } = parseArgs({
     'allow-path': { type: 'string', multiple: true, default: [] },
     model: { type: 'string', default: DEFAULT_MODEL },
     network: { type: 'boolean', default: false },
+    workflow: { type: 'string' },
   },
 });
 const [repoArg, text] = positionals;
@@ -24,16 +28,49 @@ if (repoArg === undefined || text === undefined || positionals.length > 2) {
   process.exit(2);
 }
 
-const { runId, job } = makeJob({
+const spec = {
   repo: realpathSync(repoArg),
   text,
   checks: values.check,
   allowPaths: values['allow-path'],
   model: values.model,
   policy: { network: values.network },
-});
-
+};
+const runId = runIdOf(spec, values.workflow);
 const home = process.env.KTCHN_HOME ?? join(homedir(), '.ktchn');
+
+const recordedJob = () => {
+  const path = join(home, 'ledger.sqlite');
+  if (!existsSync(path)) return undefined;
+  const ledger = openLedger(path);
+  try {
+    return ledger.job(runId);
+  } finally {
+    ledger.close();
+  }
+};
+
+/* A run already started keeps the workflow text in its ledger, so resuming it
+   must not depend on the workflow file or the catalogue as they are now.
+*/
+let job = values.workflow === undefined ? undefined : recordedJob();
+if (job === undefined) {
+  let workflow;
+  if (values.workflow !== undefined) {
+    try {
+      workflow = loadWorkflow(values.workflow, {
+        dir: fileURLToPath(new URL('../workflows/', import.meta.url)),
+        catalogue: (process.env.KTCHN_SKILL_CATALOGUE ?? '')
+          .split(delimiter)
+          .filter((folder) => folder !== ''),
+      });
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  }
+  job = makeJob({ ...spec, workflow }).job;
+}
 
 const run = await prepareRun({
   home,
