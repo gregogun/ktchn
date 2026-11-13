@@ -158,6 +158,7 @@ const script = async (sandbox: AgentSandbox) => {
 };
 
 const { shell, close } = buildShell({
+  judge: async () => ({ model: 'none', verdict: { kind: 'pass' }, calls: [] }),
   home,
   runId,
   job,

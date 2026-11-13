@@ -126,6 +126,11 @@ const world = (
 
   const drive = async (rounds: Round[]) => {
     const { shell, close } = buildShell({
+      judge: async () => ({
+        model: 'none',
+        verdict: { kind: 'pass' },
+        calls: [],
+      }),
       home,
       runId,
       job,

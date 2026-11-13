@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { driveRun, type RunShell } from './driver.ts';
-import { openLedger } from './ledger.ts';
+import { openLedger, type ModelCall } from './ledger.ts';
 import type { CheckResult, ReviewOutcome } from './review.ts';
+import type { Verdict } from './reviewer.ts';
 import { replay, type AgentInput, type RunState } from './run-machine.ts';
 
 const passed: ReviewOutcome = {
@@ -12,6 +13,21 @@ const failed: ReviewOutcome = {
   event: { type: 'ReviewFailed', findings: 'pnpm test exited 1' },
   results: [{ command: 'pnpm test', exitCode: 1, output: 'boom' }],
 };
+
+const call = (entryId: number, cost = 0.01): ModelCall => ({
+  entryId,
+  model: 'm',
+  inputTokens: 1,
+  outputTokens: 1,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  cost,
+});
+
+const judged = (outcome: ReviewOutcome, verdict: Verdict): ReviewOutcome => ({
+  ...outcome,
+  judgement: { model: 'rm', verdict, calls: [call(1, 0.5), call(2, 0.5)] },
+});
 
 const PR = 'https://github.com/o/r/pull/1';
 
@@ -92,6 +108,69 @@ describe('driveRun', () => {
       'ReviewPassed',
       'PrOpened',
     ]);
+  });
+
+  test('every agent call and every reviewer call is kept, though their entry ids match', async () => {
+    const ledger = openLedger(':memory:');
+    const fail: Verdict = { kind: 'fail', findings: '- wrong function' };
+    const fake = fakeShell([
+      judged(
+        { ...failed, event: { type: 'ReviewFailed', findings: 'f' } },
+        fail
+      ),
+      judged(passed, { kind: 'pass' }),
+    ]);
+    await driveRun(ledger, 'run-1', fake.shell);
+    const sessions = ledger
+      .records('run-1')
+      .flatMap((r) =>
+        r.kind === 'model_call' ? [`${r.session}:${r.call.entryId}`] : []
+      );
+    expect(sessions.sort()).toEqual([
+      'agent:1',
+      'agent:2',
+      'reviewer:2:1',
+      'reviewer:2:2',
+      'reviewer:4:1',
+      'reviewer:4:2',
+    ]);
+  });
+
+  test('the verdict is recorded beside the checks, before the review event', async () => {
+    const ledger = openLedger(':memory:');
+    const fake = fakeShell([judged(passed, { kind: 'pass' })]);
+    await driveRun(ledger, 'run-1', fake.shell);
+    const records = ledger.records('run-1');
+    expect(records.filter((r) => r.kind === 'reviewer_judged')).toEqual([
+      { kind: 'reviewer_judged', model: 'rm', verdict: { kind: 'pass' } },
+    ]);
+    expect(kinds(ledger, 'run-1').slice(-6)).toEqual([
+      'checks_ran',
+      'model_call',
+      'model_call',
+      'reviewer_judged',
+      'ReviewPassed',
+      'PrOpened',
+    ]);
+  });
+
+  test('a reviewer that fails every round parks the run, and its calls count toward the cost', async () => {
+    const ledger = openLedger(':memory:');
+    const fail: Verdict = { kind: 'fail', findings: '- wrong function' };
+    const reviewFailed = judged(
+      { ...failed, event: { type: 'ReviewFailed', findings: 'r' } },
+      fail
+    );
+    const fake = fakeShell([reviewFailed, reviewFailed, reviewFailed]);
+    const state = await driveRun(ledger, 'run-1', fake.shell);
+    expect(state).toMatchObject({
+      status: 'parked',
+      reason: { kind: 'review_exhausted' },
+    });
+    const cost = ledger
+      .records('run-1')
+      .reduce((sum, r) => sum + (r.kind === 'model_call' ? r.call.cost : 0), 0);
+    expect(cost).toBeCloseTo(3 * 0.01 + 3 * 1.0);
   });
 
   test('a PR that fails to open leaves the run waiting, and the next drive opens it', async () => {

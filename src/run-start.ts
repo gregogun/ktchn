@@ -6,9 +6,11 @@ import type { Job } from './job.ts';
 import { type Ledger, openLedger } from './ledger.ts';
 import { checkCanOpenPr, originBase } from './pr.ts';
 import type { reviewRun } from './review.ts';
+import { openJudge } from './reviewer.ts';
 import { isTerminal, replay, type RunState } from './run-machine.ts';
 import { sweepFinishedRuns, sweepOrphanVolumes } from './run-resources.ts';
 import { SANDBOX_IMAGE } from './sandbox.ts';
+import { openRouterModels } from './session.ts';
 import { buildShell, type SandboxPort } from './shell.ts';
 
 type Leftovers = ReturnType<typeof sweepFinishedRuns>['failed'];
@@ -57,6 +59,7 @@ export const prepareRun = async (opts: {
   sweepOrphanVolumes?: typeof sweepOrphanVolumes;
   readOpenRouterKey?: typeof readOpenRouterKey;
   openAgent?: typeof openAgent;
+  openJudge?: typeof openJudge;
   sandboxes?: SandboxPort;
   review?: typeof reviewRun;
 }): Promise<RunPreparation> => {
@@ -139,6 +142,10 @@ export const prepareRun = async (opts: {
               report: (state) =>
                 opts.report({ state, cost: modelCost(ledger, runId) }),
               sandboxes: opts.sandboxes,
+              judge: (opts.openJudge ?? openJudge)({
+                models: openRouterModels(apiKey),
+                model: job.reviewerModel,
+              }),
               review: opts.review,
             });
             close = built.close;

@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { Job } from './job.ts';
+import type { Verdict } from './reviewer.ts';
 import type { CheckResult } from './review.ts';
 import type { RunEvent } from './run-machine.ts';
 
@@ -17,7 +18,8 @@ export type LedgerRecord =
   | { kind: 'run_started'; job: Job; base: string; baseBranch: string }
   | { kind: 'run_event'; event: RunEvent }
   | { kind: 'model_call'; session: string; call: ModelCall }
-  | { kind: 'checks_ran'; results: readonly CheckResult[] };
+  | { kind: 'checks_ran'; results: readonly CheckResult[] }
+  | { kind: 'reviewer_judged'; model: string; verdict: Verdict };
 
 const pidAlive = (pid: number) => {
   try {
@@ -96,6 +98,17 @@ export const openLedger = (path: string) => {
       at: number,
       results: readonly CheckResult[]
     ) => append(runId, `checks:${at}`, { kind: 'checks_ran', results }),
+    recordJudgement: (
+      runId: string,
+      at: number,
+      model: string,
+      verdict: Verdict
+    ) =>
+      append(runId, `reviewer:${at}`, {
+        kind: 'reviewer_judged',
+        model,
+        verdict,
+      }),
     acquireLease: (
       runId: string,
       pid: number = process.pid,

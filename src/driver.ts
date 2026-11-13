@@ -62,8 +62,20 @@ export const driveRun = async (
         for (const call of calls) ledger.recordModelCall(runId, 'agent', call);
         append(ledger, runId, run.events, event);
       } else if (effect?.type === 'RunReview') {
-        const { event, results } = await shell.runReview();
+        const { event, results, judgement } = await shell.runReview();
         ledger.recordChecks(runId, run.events, results);
+        if (judgement !== undefined) {
+          const session = `reviewer:${run.events}`;
+          for (const call of judgement.calls) {
+            ledger.recordModelCall(runId, session, call);
+          }
+          ledger.recordJudgement(
+            runId,
+            run.events,
+            judgement.model,
+            judgement.verdict
+          );
+        }
         append(ledger, runId, run.events, event);
       } else if (effect?.type === 'OpenPr') {
         const pr = await shell.openPr(effect.oid, lastChecks(ledger, runId));
