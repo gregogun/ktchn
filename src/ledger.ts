@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { Job } from './job.ts';
 import type { CheckResult } from './review.ts';
 import type { RunEvent } from './run-machine.ts';
+import type { Skill } from './workflow.ts';
 
 export type ModelCall = {
   entryId: number;
@@ -17,7 +19,12 @@ export type LedgerRecord =
   | { kind: 'run_started'; job: Job; base: string; baseBranch: string }
   | { kind: 'run_event'; event: RunEvent }
   | { kind: 'model_call'; call: ModelCall }
-  | { kind: 'checks_ran'; results: readonly CheckResult[] };
+  | { kind: 'checks_ran'; results: readonly CheckResult[] }
+  | {
+      kind: 'skills_chosen';
+      round: number;
+      skills: readonly { name: string; sha256: string }[];
+    };
 
 const pidAlive = (pid: number) => {
   try {
@@ -92,6 +99,15 @@ export const openLedger = (path: string) => {
       at: number,
       results: readonly CheckResult[]
     ) => append(runId, `checks:${at}`, { kind: 'checks_ran', results }),
+    recordSkills: (runId: string, round: number, skills: readonly Skill[]) =>
+      append(runId, `skills:${round}`, {
+        kind: 'skills_chosen',
+        round,
+        skills: skills.map(({ name, text }) => ({
+          name,
+          sha256: createHash('sha256').update(text).digest('hex'),
+        })),
+      }),
     acquireLease: (
       runId: string,
       pid: number = process.pid,

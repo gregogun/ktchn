@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Workflow } from './workflow.ts';
 
 type Policy = { network: boolean };
 
@@ -10,6 +11,7 @@ export type Job = {
   checks: readonly string[];
   allowPaths: readonly string[];
   model: string;
+  workflow?: Workflow;
 };
 
 export const makeJob = (
@@ -24,6 +26,7 @@ export const makeJob = (
         spec.model,
         spec.allowPaths,
         spec.policy.network,
+        ...(spec.workflow ? [spec.workflow.name] : []),
       ])
     )
     .digest('hex')

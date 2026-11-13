@@ -2,6 +2,7 @@ import { ensureClone, handOff } from './clone.ts';
 import type { AgentOutcome } from './agent.ts';
 import type { RunShell } from './driver.ts';
 import type { Job } from './job.ts';
+import type { Skill } from './workflow.ts';
 import { openPr, prText } from './pr.ts';
 import { reviewRun } from './review.ts';
 import {
@@ -30,7 +31,10 @@ export const realSandboxes: SandboxPort = {
 };
 
 export type AgentSession = {
-  run: (request: AgentRequest) => Promise<AgentOutcome>;
+  run: (
+    request: AgentRequest,
+    skills: readonly Skill[]
+  ) => Promise<AgentOutcome>;
   close: () => Promise<void>;
 };
 
@@ -128,8 +132,8 @@ export const buildShell = (opts: {
   };
 
   const shell: RunShell = {
-    runAgent: async (request) =>
-      (await agentRound(request.number)).run(request),
+    runAgent: async (request, skills) =>
+      (await agentRound(request.number)).run(request, skills),
     runReview: async () => {
       let collected;
       try {

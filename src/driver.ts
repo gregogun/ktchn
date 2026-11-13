@@ -1,6 +1,7 @@
 import type { AgentOutcome } from './agent.ts';
 import type { Ledger } from './ledger.ts';
 import type { CheckResult, ReviewOutcome } from './review.ts';
+import { skillsFor, type Skill } from './workflow.ts';
 import {
   isTerminal,
   replay,
@@ -10,7 +11,10 @@ import {
 } from './run-machine.ts';
 
 export type RunShell = {
-  runAgent: (request: AgentRequest) => Promise<AgentOutcome>;
+  runAgent: (
+    request: AgentRequest,
+    skills: readonly Skill[]
+  ) => Promise<AgentOutcome>;
   runReview: () => Promise<ReviewOutcome>;
   closeSandbox: () => Promise<void>;
   openPr: (oid: string, checks: readonly CheckResult[]) => Promise<string>;
@@ -58,7 +62,11 @@ export const driveRun = async (
         if (run.agentRequest === undefined) {
           throw new Error(`Run ${runId} resumed an agent it never started`);
         }
-        const { event, calls } = await shell.runAgent(run.agentRequest);
+        const { agentRequest } = run;
+        const workflow = ledger.job(runId)?.workflow;
+        const skills = workflow ? skillsFor(workflow, agentRequest.input) : [];
+        if (workflow) ledger.recordSkills(runId, agentRequest.number, skills);
+        const { event, calls } = await shell.runAgent(agentRequest, skills);
         for (const call of calls) ledger.recordModelCall(runId, call);
         append(ledger, runId, run.events, event);
       } else if (effect?.type === 'RunReview') {

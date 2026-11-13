@@ -28,4 +28,34 @@ describe('makeJob', () => {
       makeJob(spec).runId
     );
   });
+
+  describe('with a workflow', () => {
+    const workflow = {
+      name: 'flow',
+      method: 'm',
+      skills: [{ name: 'tdd', text: 'one' }],
+      findingsSkills: [],
+    };
+
+    test('a job without a workflow keeps the run id it has always had', () => {
+      expect(makeJob(spec).runId).toBe('439ba16bb51b');
+    });
+
+    test('a workflow makes a different run', () => {
+      expect(makeJob({ ...spec, workflow }).runId).not.toBe(
+        makeJob(spec).runId
+      );
+    });
+
+    test('a workflow with the same name and different text is the same run', () => {
+      const edited = {
+        ...workflow,
+        method: 'changed',
+        skills: [{ name: 'tdd', text: 'two' }],
+      };
+      expect(makeJob({ ...spec, workflow: edited }).runId).toBe(
+        makeJob({ ...spec, workflow }).runId
+      );
+    });
+  });
 });
