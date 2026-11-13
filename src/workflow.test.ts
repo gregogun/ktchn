@@ -88,6 +88,11 @@ describe('loadWorkflow', () => {
       '---\nfindings-skills: [1]\n---\nm',
       /flow\.md.*"findings-skills"/,
     ],
+    [
+      'a path-like skill name',
+      '---\nskills: [../elsewhere]\n---\nm',
+      /flow\.md.*"skills"/,
+    ],
   ])('%s is refused naming the file and key', (_, text, message) => {
     expect(() => world(text).load()).toThrow(message);
   });

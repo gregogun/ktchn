@@ -14,10 +14,11 @@ export type Job = {
   workflow?: Workflow;
 };
 
-export const makeJob = (
-  spec: Omit<Job, 'branch'>
-): { runId: string; job: Job } => {
-  const runId = createHash('sha256')
+export const runIdOf = (
+  spec: Omit<Job, 'branch' | 'workflow'>,
+  workflow: string | undefined
+) =>
+  createHash('sha256')
     .update(
       JSON.stringify([
         spec.repo,
@@ -26,10 +27,15 @@ export const makeJob = (
         spec.model,
         spec.allowPaths,
         spec.policy.network,
-        ...(spec.workflow ? [spec.workflow.name] : []),
+        ...(workflow === undefined ? [] : [workflow]),
       ])
     )
     .digest('hex')
     .slice(0, 12);
+
+export const makeJob = (
+  spec: Omit<Job, 'branch'>
+): { runId: string; job: Job } => {
+  const runId = runIdOf(spec, spec.workflow?.name);
   return { runId, job: { ...spec, branch: `ktchn/${runId}` } };
 };

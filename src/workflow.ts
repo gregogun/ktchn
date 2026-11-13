@@ -15,14 +15,17 @@ export type Workflow = {
 const KEYS = ['skills', 'findings-skills'];
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/;
 
+const unsafe = (name: string) =>
+  name === '' || /[\\/]/.test(name) || name.includes('..');
+
 const names = (file: string, key: string, value: unknown): string[] => {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     throw new Error(`${file}: "${key}" must be a list of skill names`);
   }
   return value.map((entry: unknown) => {
-    if (typeof entry !== 'string') {
-      throw new Error(`${file}: "${key}" must hold only skill names (strings)`);
+    if (typeof entry !== 'string' || unsafe(entry)) {
+      throw new Error(`${file}: "${key}" must hold only skill names`);
     }
     return entry;
   });
@@ -40,7 +43,7 @@ export const loadWorkflow = (
   name: string,
   opts: { dir: string; catalogue: readonly string[] }
 ): Workflow => {
-  if (name === '' || /[\\/]/.test(name) || name.includes('..')) {
+  if (unsafe(name)) {
     throw new Error(`"${name}" is not a workflow name`);
   }
   const file = join(opts.dir, `${name}.md`);
