@@ -32,7 +32,7 @@ describe('ledger', () => {
   test('a run gives back its events in the order they were appended', () => {
     const ledger = openLedger(':memory:');
     ledger.appendEvent('run-1', 0, { type: 'Dequeued' });
-    ledger.recordModelCall('run-1', {
+    ledger.recordModelCall('run-1', 'agent', {
       entryId: 1,
       model: 'anthropic/claude-haiku-4.5',
       inputTokens: 1,
@@ -74,12 +74,34 @@ describe('ledger', () => {
       cacheWriteTokens: 0,
       cost: 0.001743,
     };
-    ledger.recordModelCall('run-1', call);
-    ledger.recordModelCall('run-1', call);
+    ledger.recordModelCall('run-1', 'agent', call);
+    ledger.recordModelCall('run-1', 'agent', call);
     ledger.appendEvent('run-2', 0, { type: 'Dequeued' });
-    expect(ledger.records('run-1')).toEqual([{ kind: 'model_call', call }]);
+    expect(ledger.records('run-1')).toEqual([
+      { kind: 'model_call', session: 'agent', call },
+    ]);
     expect(ledger.events('run-1')).toEqual([]);
     expect(ledger.events('run-2')).toEqual([{ type: 'Dequeued' }]);
+  });
+
+  test('the same entry id from two sessions is two model calls', () => {
+    const ledger = openLedger(':memory:');
+    const call = {
+      entryId: 3,
+      model: 'm',
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cost: 0.5,
+    };
+    ledger.recordModelCall('run-1', 'agent', call);
+    ledger.recordModelCall('run-1', 'reviewer:4', call);
+    ledger.recordModelCall('run-1', 'reviewer:4', call);
+    expect(ledger.records('run-1').map((r) => r.kind)).toEqual([
+      'model_call',
+      'model_call',
+    ]);
   });
 
   test('the record survives reopening the file', () => {

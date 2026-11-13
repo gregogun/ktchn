@@ -16,7 +16,7 @@ export type ModelCall = {
 export type LedgerRecord =
   | { kind: 'run_started'; job: Job; base: string; baseBranch: string }
   | { kind: 'run_event'; event: RunEvent }
-  | { kind: 'model_call'; call: ModelCall }
+  | { kind: 'model_call'; session: string; call: ModelCall }
   | { kind: 'checks_ran'; results: readonly CheckResult[] };
 
 const pidAlive = (pid: number) => {
@@ -85,8 +85,12 @@ export const openLedger = (path: string) => {
       records(runId).find((r) => r.kind === 'run_started')?.job,
     appendEvent: (runId: string, at: number, event: RunEvent) =>
       append(runId, `event:${at}`, { kind: 'run_event', event }),
-    recordModelCall: (runId: string, call: ModelCall) =>
-      append(runId, `model_call:${call.entryId}`, { kind: 'model_call', call }),
+    recordModelCall: (runId: string, session: string, call: ModelCall) =>
+      append(runId, `model_call:${session}:${call.entryId}`, {
+        kind: 'model_call',
+        session,
+        call,
+      }),
     recordChecks: (
       runId: string,
       at: number,

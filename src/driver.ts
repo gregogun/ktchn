@@ -59,7 +59,7 @@ export const driveRun = async (
           throw new Error(`Run ${runId} resumed an agent it never started`);
         }
         const { event, calls } = await shell.runAgent(run.agentRequest);
-        for (const call of calls) ledger.recordModelCall(runId, call);
+        for (const call of calls) ledger.recordModelCall(runId, 'agent', call);
         append(ledger, runId, run.events, event);
       } else if (effect?.type === 'RunReview') {
         const { event, results } = await shell.runReview();
