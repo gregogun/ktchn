@@ -6,6 +6,7 @@ const spec = {
   text: 'Add a README',
   checks: ['pnpm test'],
   model: 'm',
+  reviewerModel: 'rm',
   allowPaths: [],
   policy: { network: false },
 };
@@ -19,6 +20,12 @@ describe('makeJob', () => {
 
   test('allowed paths make a different run', () => {
     expect(makeJob({ ...spec, allowPaths: ['package.json'] }).runId).not.toBe(
+      makeJob(spec).runId
+    );
+  });
+
+  test('a different reviewer model makes a different run', () => {
+    expect(makeJob({ ...spec, reviewerModel: 'other' }).runId).not.toBe(
       makeJob(spec).runId
     );
   });

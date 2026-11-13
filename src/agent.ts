@@ -64,7 +64,7 @@ export const prompt = (input: FreshAgentInput, job: PromptJob) => {
         'Work in the current directory. Commit your work on the current branch when you are done. Do not push, and do not move or switch branches.',
       ].join('\n');
     case 'findings':
-      return `Review's checks failed:\n\n${input.findings}\n\nFix the problems and commit on the current branch.`;
+      return `Review found problems with your work:\n\n${input.findings}\n\nFix the problems and commit on the current branch.`;
     case 'answer':
       return input.answer;
   }

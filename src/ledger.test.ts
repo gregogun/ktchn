@@ -10,6 +10,7 @@ const job: Job = {
   allowPaths: [],
   policy: { network: false },
   model: 'anthropic/claude-haiku-4.5',
+  reviewerModel: 'anthropic/claude-sonnet-4.5',
 };
 
 describe('ledger', () => {

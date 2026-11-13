@@ -115,6 +115,7 @@ const world = (policy: Job['policy']) => {
     allowPaths: [],
     policy,
     model: 'm',
+    reviewerModel: 'rm',
   });
   return {
     home,

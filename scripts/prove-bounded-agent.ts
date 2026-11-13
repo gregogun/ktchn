@@ -13,6 +13,7 @@ import { removeSandboxes } from '../src/run-resources.ts';
 import { type AgentSandbox, SANDBOX_IMAGE } from '../src/sandbox.ts';
 import { buildShell } from '../src/shell.ts';
 import { DEFAULT_MODEL } from '../src/agent.ts';
+import { DEFAULT_REVIEWER_MODEL } from '../src/reviewer.ts';
 import { git, ktchnLeftovers, makeTempRepo } from './temp-repo.ts';
 
 const image = SANDBOX_IMAGE;
@@ -81,6 +82,7 @@ const { runId, job } = makeJob({
   allowPaths: [],
   policy: { network: false },
   model: DEFAULT_MODEL,
+  reviewerModel: DEFAULT_REVIEWER_MODEL,
 });
 const ledger = openLedger(join(home, 'ledger.sqlite'));
 ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'), 'main');

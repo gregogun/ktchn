@@ -27,6 +27,7 @@ describe('the first prompt', () => {
     checks: ['pnpm test', 'pnpm lint'],
     allowPaths: [],
     model: 'm',
+    reviewerModel: 'rm',
   });
   const first = (network: boolean) => prompt({ kind: 'job' }, job(network));
 
