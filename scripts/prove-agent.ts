@@ -70,7 +70,7 @@ try {
     apiKey: readOpenRouterKey(),
   });
   try {
-    const outcome = await agent.run({ input: { kind: 'job' }, number: 1 });
+    const outcome = await agent.run({ input: { kind: 'job' }, number: 1 }, []);
     console.log('outcome', outcome.event.type);
     for (const call of outcome.calls)
       console.log('model call', JSON.stringify(call));

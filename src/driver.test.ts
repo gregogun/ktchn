@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
 import { driveRun, type RunShell } from './driver.ts';
 import { openLedger } from './ledger.ts';
 import type { CheckResult, ReviewOutcome } from './review.ts';
 import { replay, type AgentInput, type RunState } from './run-machine.ts';
+import type { Skill } from './workflow.ts';
 
 const passed: ReviewOutcome = {
   event: { type: 'ReviewPassed', oid: 'abc123' },
@@ -17,13 +19,15 @@ const PR = 'https://github.com/o/r/pull/1';
 
 const fakeShell = (reviews: (ReviewOutcome | 'crash')[]) => {
   const agentCalls: [AgentInput['kind'], number][] = [];
+  const agentSkills: (readonly Skill[])[] = [];
   const reports: RunState[] = [];
   let closes = 0;
   const opened: [string, readonly CheckResult[]][] = [];
   let discards = 0;
   const shell: RunShell = {
-    runAgent: async ({ input, number }) => {
+    runAgent: async ({ input, number }, skills) => {
       agentCalls.push([input.kind, number]);
+      agentSkills.push(skills);
       return {
         event: { type: 'AgentFinished' },
         calls: [
@@ -59,6 +63,7 @@ const fakeShell = (reviews: (ReviewOutcome | 'crash')[]) => {
   return {
     shell,
     agentCalls,
+    agentSkills,
     reports,
     opened,
     closes: () => closes,
@@ -188,8 +193,8 @@ describe('driveRun', () => {
     const fake = fakeShell([failed, passed]);
     const shell: RunShell = {
       ...fake.shell,
-      runAgent: async (request) => ({
-        ...(await fake.shell.runAgent(request)),
+      runAgent: async (request, skills) => ({
+        ...(await fake.shell.runAgent(request, skills)),
         calls: [
           {
             entryId: 7,
@@ -214,9 +219,9 @@ describe('driveRun', () => {
     const fake = fakeShell([passed]);
     const shell: RunShell = {
       ...fake.shell,
-      runAgent: async (request) => {
+      runAgent: async (request, skills) => {
         ledger.appendEvent('run-1', 1, { type: 'OwnerParked' });
-        return fake.shell.runAgent(request);
+        return fake.shell.runAgent(request, skills);
       },
     };
     await expect(driveRun(ledger, 'run-1', shell)).rejects.toThrow(
@@ -239,5 +244,65 @@ describe('driveRun', () => {
       reason: { kind: 'agent_ended_early', reason: 'out of turns' },
     });
     expect(kinds(ledger, 'run-1')).toEqual(['Dequeued', 'AgentEndedEarly']);
+  });
+
+  describe('skills', () => {
+    const sha = (text: string) =>
+      createHash('sha256').update(text).digest('hex');
+    const job = {
+      repo: '/repo',
+      branch: 'ktchn/r',
+      text: 't',
+      policy: { network: false },
+      checks: [],
+      allowPaths: [],
+      model: 'm',
+    };
+    const workflow = {
+      name: 'flow',
+      method: 'm',
+      skills: [
+        { name: 'tdd', text: 'Test first.\n' },
+        { name: 'small', text: 'Keep it small.' },
+      ],
+      findingsSkills: [{ name: 'debug', text: 'Find the root cause.' }],
+    };
+    const chosen = (ledger: ReturnType<typeof openLedger>) =>
+      ledger.records('run-1').filter((r) => r.kind === 'skills_chosen');
+
+    test('a run with a workflow records each round chosen skills with their hashes before the agent runs, and hands them to the agent', async () => {
+      const ledger = openLedger(':memory:');
+      ledger.startRun('run-1', { ...job, workflow }, 'b'.repeat(40), 'main');
+      const fake = fakeShell([failed, passed]);
+      await driveRun(ledger, 'run-1', fake.shell);
+      expect(chosen(ledger)).toEqual([
+        {
+          kind: 'skills_chosen',
+          round: 1,
+          skills: [
+            { name: 'tdd', sha256: sha('Test first.\n') },
+            { name: 'small', sha256: sha('Keep it small.') },
+          ],
+        },
+        {
+          kind: 'skills_chosen',
+          round: 2,
+          skills: [{ name: 'debug', sha256: sha('Find the root cause.') }],
+        },
+      ]);
+      expect(fake.agentSkills).toEqual([
+        workflow.skills,
+        workflow.findingsSkills,
+      ]);
+    });
+
+    test('a run without a workflow records no skills and gives the agent none', async () => {
+      const ledger = openLedger(':memory:');
+      ledger.startRun('run-1', job, 'b'.repeat(40), 'main');
+      const fake = fakeShell([failed, passed]);
+      await driveRun(ledger, 'run-1', fake.shell);
+      expect(chosen(ledger)).toEqual([]);
+      expect(fake.agentSkills).toEqual([[], []]);
+    });
   });
 });

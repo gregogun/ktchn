@@ -221,6 +221,43 @@ describe('prepareRun', () => {
     await second.drive();
   });
 
+  test('a resumed run gives the agent the workflow recorded at its start, not the one in the job it is handed now', async () => {
+    const w = world();
+    const flow = (text: string) => ({
+      name: 'flow',
+      method: 'm',
+      skills: [{ name: 'tdd', text }],
+      findingsSkills: [],
+    });
+    const started = makeJob({
+      ...w.job,
+      workflow: flow('recorded text'),
+    });
+    const ledger = w.seed();
+    ledger.startRun(
+      started.runId,
+      started.job,
+      git(w.job.repo, 'rev-parse', 'HEAD'),
+      'main'
+    );
+    ledger.close();
+    const seen: string[] = [];
+    const prepared = ready(
+      await prepareRun({
+        ...w.opts,
+        runId: started.runId,
+        job: makeJob({ ...w.job, workflow: flow('edited text') }).job,
+        openAgent: async ({ job }) => {
+          seen.push(...(job.workflow?.skills.map((s) => s.text) ?? []));
+          return endsEarly();
+        },
+      })
+    );
+    expect(prepared.start).toBe('resumed');
+    await prepared.drive();
+    expect(seen).toEqual(['recorded text']);
+  });
+
   test('a run recorded with a base but no base branch is resumed, then fails to drive and releases the lease', async () => {
     const w = world();
     const ledger = w.seed();
