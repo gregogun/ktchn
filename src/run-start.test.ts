@@ -35,6 +35,7 @@ const world = () => {
     allowPaths: [],
     policy: { network: false },
     model: 'm',
+    reviewerModel: 'rm',
   });
   const fetched: string[] = [];
   const reports: { state: RunState; cost: number }[] = [];

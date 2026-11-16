@@ -39,6 +39,7 @@ describe('the first prompt', () => {
     checks: ['pnpm test', 'pnpm lint'],
     allowPaths: [],
     model: 'm',
+    reviewerModel: 'rm',
   });
   const first = (network: boolean) => prompt({ kind: 'job' }, job(network), []);
 
@@ -81,6 +82,7 @@ describe('a prompt with a workflow', () => {
     checks: ['pnpm test'],
     allowPaths: [],
     model: 'm',
+    reviewerModel: 'rm',
     workflow: {
       name: 'flow',
       method: 'Work in small steps.',
@@ -119,7 +121,7 @@ describe('a prompt with a workflow', () => {
 
   test('a round with no skills is the plain prompt', () => {
     expect(prompt({ kind: 'findings', findings: 'f' }, job, [])).toBe(
-      "Review's checks failed:\n\nf\n\nFix the problems and commit on the current branch."
+      'Review found problems with your work:\n\nf\n\nFix the problems and commit on the current branch.'
     );
     expect(prompt({ kind: 'answer', answer: 'yes' }, job, [])).toBe('yes');
   });

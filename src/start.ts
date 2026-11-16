@@ -6,11 +6,12 @@ import { parseArgs } from 'node:util';
 import { DEFAULT_MODEL } from './agent.ts';
 import { makeJob, runIdOf } from './job.ts';
 import { openLedger } from './ledger.ts';
+import { DEFAULT_REVIEWER_MODEL } from './reviewer.ts';
 import { prepareRun } from './run-start.ts';
 import { loadWorkflow } from './workflow.ts';
 
 const usage =
-  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--network] [--workflow <name>]';
+  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--reviewer-model <id>] [--network] [--workflow <name>]';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -18,6 +19,7 @@ const { positionals, values } = parseArgs({
     check: { type: 'string', multiple: true, default: [] },
     'allow-path': { type: 'string', multiple: true, default: [] },
     model: { type: 'string', default: DEFAULT_MODEL },
+    'reviewer-model': { type: 'string', default: DEFAULT_REVIEWER_MODEL },
     network: { type: 'boolean', default: false },
     workflow: { type: 'string' },
   },
@@ -34,6 +36,7 @@ const spec = {
   checks: values.check,
   allowPaths: values['allow-path'],
   model: values.model,
+  reviewerModel: values['reviewer-model'],
   policy: { network: values.network },
 };
 const runId = runIdOf(spec, values.workflow);

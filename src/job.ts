@@ -11,6 +11,7 @@ export type Job = {
   checks: readonly string[];
   allowPaths: readonly string[];
   model: string;
+  reviewerModel: string;
   workflow?: Workflow;
 };
 
@@ -25,6 +26,7 @@ export const runIdOf = (
         spec.text,
         spec.checks,
         spec.model,
+        spec.reviewerModel,
         spec.allowPaths,
         spec.policy.network,
         ...(workflow === undefined ? [] : [workflow]),
