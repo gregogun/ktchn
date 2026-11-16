@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { prompt, readOpenRouterKey } from './agent.ts';
 import type { Job } from './job.ts';
 import { prText } from './pr.ts';
@@ -6,6 +9,7 @@ import { prText } from './pr.ts';
 describe('readOpenRouterKey', () => {
   const saved = process.env.OPENROUTER_API_KEY;
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (saved === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = saved;
   });
@@ -15,6 +19,14 @@ describe('readOpenRouterKey', () => {
     expect(readOpenRouterKey()).toBe('sk-or-test');
     expect(process.env.OPENROUTER_API_KEY).toBeUndefined();
     expect(Object.values(process.env)).not.toContain('sk-or-test');
+  });
+
+  test('tells the owner to sign in when no auth file exists, without a raw ENOENT', () => {
+    vi.stubEnv('HOME', mkdtempSync(join(tmpdir(), 'ktchn-home-')));
+    delete process.env.OPENROUTER_API_KEY;
+    expect(() => readOpenRouterKey()).toThrow(
+      /^(?!.*ENOENT).*no OpenRouter key found in .*sign in with pi first/is
+    );
   });
 });
 
@@ -29,7 +41,7 @@ describe('the first prompt', () => {
     model: 'm',
     reviewerModel: 'rm',
   });
-  const first = (network: boolean) => prompt({ kind: 'job' }, job(network));
+  const first = (network: boolean) => prompt({ kind: 'job' }, job(network), []);
 
   test('says there is no network, lists the checks and gives the hook and commit instructions', () => {
     const text = first(false);
@@ -54,5 +66,63 @@ describe('the first prompt', () => {
     expect(body).toContain('Fix the token bug');
     expect(body).not.toContain('no network');
     expect(body).not.toContain('--no-verify');
+  });
+});
+
+describe('a prompt with a workflow', () => {
+  const skills = [
+    { name: 'tdd', text: 'Test first.' },
+    { name: 'small', text: 'Keep it small.' },
+  ];
+  const job: Job = {
+    repo: '/repo',
+    branch: 'ktchn/r1',
+    text: 'Fix the token bug',
+    policy: { network: false },
+    checks: ['pnpm test'],
+    allowPaths: [],
+    model: 'm',
+    reviewerModel: 'rm',
+    workflow: {
+      name: 'flow',
+      method: 'Work in small steps.',
+      skills,
+      findingsSkills: [],
+    },
+  };
+
+  test('the first round holds the method, each skill block and the job, in that order, with the sandbox briefing', () => {
+    const text = prompt({ kind: 'job' }, job, skills);
+    const at = [
+      'Work in small steps.',
+      '<skill name="tdd">\nTest first.\n</skill>',
+      '<skill name="small">\nKeep it small.\n</skill>',
+      'Fix the token bug',
+    ].map((part) => text.indexOf(part));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    expect(text).toContain('no network, so nothing can be downloaded');
+    expect(text).toContain('- pnpm test');
+  });
+
+  test('a findings round holds the findings skill block and the findings', () => {
+    const text = prompt(
+      { kind: 'findings', findings: 'pnpm test exited 1' },
+      job,
+      [{ name: 'debug', text: 'Find the root cause.' }]
+    );
+    expect(text).toContain(
+      '<skill name="debug">\nFind the root cause.\n</skill>'
+    );
+    expect(text.indexOf('<skill')).toBeLessThan(
+      text.indexOf('pnpm test exited 1')
+    );
+  });
+
+  test('a round with no skills is the plain prompt', () => {
+    expect(prompt({ kind: 'findings', findings: 'f' }, job, [])).toBe(
+      'Review found problems with your work:\n\nf\n\nFix the problems and commit on the current branch.'
+    );
+    expect(prompt({ kind: 'answer', answer: 'yes' }, job, [])).toBe('yes');
   });
 });

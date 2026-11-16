@@ -1,6 +1,6 @@
 # One package; the skill catalogue and Sandcastle stay outside
 
-Status: [ADR 0015](0015-sealed-sandbox-and-trusted-clone.md) amends this for the sandbox provider. ktchn drives docker itself and does not depend on Sandcastle. The rest stands.
+Status: [ADR 0015](0015-sealed-sandbox-and-trusted-clone.md) amends this for the sandbox provider. ktchn drives docker itself and does not depend on Sandcastle. [ADR 0016](0016-the-kitchen-owns-the-context.md) amends it for the skill catalogue. The catalogue is whichever folders of skills the owner points the kitchen at, and gstack is one of them, not a dependency. The rest stands.
 
 ktchn is a single package with module folders, not a workspace of packages. Separation comes from dependency direction, enforced by an import-boundary lint rule, not from package boundaries. We split into packages only when something needs to deploy or publish on its own.
 

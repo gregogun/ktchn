@@ -1,4 +1,4 @@
-ktchn is a software kitchen: the owner hands over jobs and agents carry them out, with every result reviewed before it counts as done. It is a single TypeScript package on Node, managed with pnpm.
+ktchn is a system for agentic development. The owner hands over jobs, agents carry them out in sandboxes with only the context the kitchen gives them, and every result is reviewed before it counts as done. [README.md](README.md) says what it is for. It is a single TypeScript package on Node, managed with pnpm.
 
 ## Ground rules
 

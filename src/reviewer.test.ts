@@ -88,8 +88,10 @@ describe('the reviewer judging a diff', () => {
     await setup([step]).judge(input);
     const seenText = JSON.stringify(seen[0]);
     const briefing = [
-      ...prompt({ kind: 'job' }, job).split('\n'),
-      ...prompt({ kind: 'findings', findings: 'lint failed' }, job).split('\n'),
+      ...prompt({ kind: 'job' }, job, []).split('\n'),
+      ...prompt({ kind: 'findings', findings: 'lint failed' }, job, []).split(
+        '\n'
+      ),
     ].filter(
       (line) =>
         line.trim() !== '' && line !== job.text && !line.startsWith('- ')
