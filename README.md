@@ -2,7 +2,7 @@
 
 ktchn is a local system for working with coding agents. You hand it a job. An agent does the work inside a sealed sandbox, given only the context ktchn decides on. Review then runs the project's checks, and you get the work back as a branch and a pull request only after it passes.
 
-The agent runs on the [pi](https://github.com/earendil-works/pi) harness through pi-durable. Today it can use any model on OpenRouter.
+Every role that calls a model runs on the [pi](https://github.com/earendil-works/pi) harness through pi-durable, and each role picks a provider and a model. The agent uses a model on OpenRouter. The reviewer uses Claude Opus through your Claude subscription by default.
 
 ## Why not just use a coding agent?
 
@@ -10,7 +10,7 @@ Tools like Claude Code put the model in charge of its own context. It finds skil
 
 - **The kitchen decides what the agent is given.** Which skills a round gets will depend on the job, the project and the state of the run, such as whether this round is fixing review findings. ktchn makes that choice as a pure function and records it in the ledger, so you can see what an agent was given and why. The same inputs give the same context every time. This is designed but not built yet. Today the agent gets the job text, a note about its sandbox and the checks it must pass.
 - **Containment instead of permission prompts.** The agent works in a Docker sandbox with no repository mounted, no credentials and, unless the job asks for it, no network. Model calls happen on the host, so the model key never enters the sandbox. Nothing asks you to approve a command, because nothing the agent does reaches past the sandbox.
-- **Done means reviewed.** A run is done only when review passes. Today review checks that the agent made a new commit that leaves protected files alone, then runs the job's checks in a separate sandbox. The reviewer, a model that judges the work against what was asked, is not built yet.
+- **Done means reviewed.** A run is done only when review passes. Review checks that the agent made a new commit that leaves protected files alone, then runs the job's checks in a separate sandbox. Then the reviewer, a model that sees the job and the diff but nothing of the agent's session, judges the work against what was asked.
 - **Runs survive crashes.** If the process dies, starting the same job again picks the run up where it stopped. A run that needs you parks and frees its sandbox. Answering a parked run is not built yet.
 
 You decide how work is done: the workflows, the rules that pick skills, the checks, the policy and the models. The sandbox and review are not optional, because they are why you can trust what comes back. [ADR 0016](docs/adr/0016-the-kitchen-owns-the-context.md) explains that line.
@@ -27,11 +27,11 @@ Every decision along the way is an event in the ledger, an append-only record in
 
 ## Status
 
-ktchn is early and runs from a command line. Workflows, skill selection, the reviewer and the local app are designed in [docs/adr/](docs/adr/) but not built yet.
+ktchn is early and runs from a command line. Workflows, skill selection and the local app are designed in [docs/adr/](docs/adr/) but not built yet.
 
 ## Try it
 
-You need Node 24 (see `.nvmrc`), pnpm, a running Docker daemon, the GitHub CLI signed in with `gh auth login`, and an OpenRouter key. The project you point ktchn at needs a GitHub `origin`.
+You need Node 24 (see `.nvmrc`), pnpm, a running Docker daemon, the GitHub CLI signed in with `gh auth login`, and an OpenRouter key. For the default reviewer you also need [Claude Code](https://code.claude.com/docs) on your `PATH`, signed in to a Claude Pro or Max subscription. The project you point ktchn at needs a GitHub `origin`.
 
 1. Install dependencies:
 
@@ -53,18 +53,25 @@ You need Node 24 (see `.nvmrc`), pnpm, a running Docker daemon, the GitHub CLI s
    export OPENROUTER_API_KEY=...
    ```
 
+   Sign in to Claude Code once for the reviewer. Claude Code keeps the login, on macOS in the keychain. ktchn never reads, copies or stores it, and it never enters a sandbox.
+
+   ```sh
+   claude auth login
+   ```
+
 4. Start a run:
 
    ```sh
    node src/start.ts ~/code/my-project "Fix the off-by-one in the pagination helper" --check "pnpm test"
    ```
 
-The command runs until the run is done or parks, then prints its state and model cost. It exits early with a message if something stops the run from starting. To pick up a run after a crash, run exactly the same command again. The run's id comes from its arguments.
+The command runs until the run is done or parks, then prints its state and model cost. Calls through your Claude subscription have no per-call price, so they count as $0 and the report lists how many there were. It exits early with a message if something stops the run from starting, such as Claude Code not being signed in. To pick up a run after a crash, run exactly the same command again. The run's id comes from its arguments.
 
 Other flags:
 
 - `--check "<command>"` adds a check. Repeat it for more.
-- `--model <id>` picks an OpenRouter model.
+- `--model <id>` picks the agent's OpenRouter model.
+- `--reviewer-provider <openrouter|claude-code>` and `--reviewer-model <id>` pick the reviewer. The default is `claude-code` with `claude-opus-5-5`. Each provider has its own default model, so `--reviewer-provider openrouter` alone uses `deepseek/deepseek-v4-pro-0813`, the reviewer runs had before.
 - `--network` gives the agent's sandbox network access.
 - `--allow-path "<glob>"` lets the agent change a protected file, such as `package.json` or a lint config.
 
