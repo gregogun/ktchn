@@ -19,6 +19,7 @@ const failed: ReviewOutcome = {
 const call = (entryId: number, cost = 0.01): ModelCall => ({
   entryId,
   model: 'm',
+  billing: 'api' as const,
   inputTokens: 1,
   outputTokens: 1,
   cacheReadTokens: 0,
@@ -50,6 +51,7 @@ const fakeShell = (reviews: (ReviewOutcome | 'crash')[]) => {
           {
             entryId: agentCalls.length,
             model: 'm',
+            billing: 'api' as const,
             inputTokens: 1,
             outputTokens: 1,
             cacheReadTokens: 0,
@@ -278,6 +280,7 @@ describe('driveRun', () => {
           {
             entryId: 7,
             model: 'm',
+            billing: 'api' as const,
             inputTokens: 1,
             outputTokens: 1,
             cacheReadTokens: 0,
@@ -336,6 +339,7 @@ describe('driveRun', () => {
       checks: [],
       allowPaths: [],
       model: 'm',
+      reviewerProvider: 'openrouter' as const,
       reviewerModel: 'rm',
     };
     const workflow = {

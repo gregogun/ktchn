@@ -10,6 +10,7 @@ const job: Job = {
   allowPaths: [],
   policy: { network: false },
   model: 'anthropic/claude-haiku-4.5',
+  reviewerProvider: 'openrouter' as const,
   reviewerModel: 'anthropic/claude-sonnet-4.5',
 };
 
@@ -20,6 +21,16 @@ describe('ledger', () => {
     expect(ledger.job('run-1')).toEqual(job);
     expect(ledger.base('run-1')).toBe('abc');
     expect(ledger.events('run-1')).toEqual([]);
+  });
+
+  test('a job recorded before the reviewer had a provider reads as OpenRouter', () => {
+    const ledger = openLedger(':memory:');
+    const { reviewerProvider: _, ...older } = {
+      ...job,
+      reviewerProvider: 'claude-code' as const,
+    };
+    ledger.startRun('run-1', older as Job, 'abc', 'main');
+    expect(ledger.job('run-1')?.reviewerProvider).toBe('openrouter');
   });
 
   test('a resumed run keeps the base it started from', () => {
@@ -36,6 +47,7 @@ describe('ledger', () => {
     ledger.recordModelCall('run-1', 'agent', {
       entryId: 1,
       model: 'anthropic/claude-haiku-4.5',
+      billing: 'api' as const,
       inputTokens: 1,
       outputTokens: 1,
       cacheReadTokens: 0,
@@ -69,6 +81,7 @@ describe('ledger', () => {
     const call = {
       entryId: 11,
       model: 'anthropic/claude-haiku-4.5',
+      billing: 'api' as const,
       inputTokens: 1313,
       outputTokens: 86,
       cacheReadTokens: 0,
@@ -90,6 +103,7 @@ describe('ledger', () => {
     const call = {
       entryId: 3,
       model: 'm',
+      billing: 'api' as const,
       inputTokens: 1,
       outputTokens: 1,
       cacheReadTokens: 0,

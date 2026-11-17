@@ -15,7 +15,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MODEL } from '../src/agent.ts';
 import type { AgentOutcome } from '../src/agent.ts';
-import { DEFAULT_REVIEWER_MODEL } from '../src/reviewer.ts';
+import {
+  DEFAULT_REVIEWER_MODELS,
+  DEFAULT_REVIEWER_PROVIDER,
+} from '../src/reviewer.ts';
 import { driveRun } from '../src/driver.ts';
 import { makeJob } from '../src/job.ts';
 import { seedScript } from '../src/box-scripts.ts';
@@ -115,7 +118,8 @@ const world = (
     allowPaths: opts.allowPaths ?? [],
     policy: { network: opts.network ?? false },
     model: DEFAULT_MODEL,
-    reviewerModel: DEFAULT_REVIEWER_MODEL,
+    reviewerProvider: DEFAULT_REVIEWER_PROVIDER,
+    reviewerModel: DEFAULT_REVIEWER_MODELS[DEFAULT_REVIEWER_PROVIDER],
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
   ledger.startRun(runId, job, git(repo, 'rev-parse', 'HEAD'), 'main');
@@ -459,7 +463,8 @@ const reviewFailed = (ledger: ReturnType<typeof openLedger>, runId: string) => {
     allowPaths: [],
     policy: { network: false },
     model: DEFAULT_MODEL,
-    reviewerModel: DEFAULT_REVIEWER_MODEL,
+    reviewerProvider: DEFAULT_REVIEWER_PROVIDER,
+    reviewerModel: DEFAULT_REVIEWER_MODELS[DEFAULT_REVIEWER_PROVIDER],
   });
   const ledger = openLedger(join(home, 'ledger.sqlite'));
   const first = spawn('sleep', ['60']);

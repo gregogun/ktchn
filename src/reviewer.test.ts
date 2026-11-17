@@ -2,18 +2,14 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import {
   fauxAssistantMessage,
   fauxProvider,
+  fauxToolCall,
   type FauxResponseStep,
 } from '@earendil-works/pi-ai/providers/faux';
 import type { TranscriptContext } from '@earendil-works/pi-ai';
 import { describe, expect, test } from 'vitest';
 import { prompt } from './agent.ts';
 import type { Job } from './job.ts';
-import {
-  MAX_DIFF_CHARS,
-  openJudge,
-  parseVerdict,
-  type JudgeInput,
-} from './reviewer.ts';
+import { MAX_DIFF_CHARS, openJudge, type JudgeInput } from './reviewer.ts';
 
 const job: Job = {
   repo: '/repo',
@@ -23,6 +19,7 @@ const job: Job = {
   checks: ['pnpm test'],
   allowPaths: [],
   model: 'agent-model',
+  reviewerProvider: 'openrouter',
   reviewerModel: 'reviewer-model',
 };
 
@@ -32,9 +29,9 @@ const input: JudgeInput = {
   results: [{ command: 'pnpm test', exitCode: 0, output: 'ok' }],
 };
 
-const setup = (responses: FauxResponseStep[]) => {
+const setup = (responses: FauxResponseStep[], provider = 'faux') => {
   const faux = fauxProvider({
-    provider: 'faux',
+    provider,
     models: [
       {
         id: 'faux-reviewer',
@@ -51,22 +48,27 @@ const setup = (responses: FauxResponseStep[]) => {
   models.setProvider(faux.provider);
   faux.setResponses(responses);
   return {
-    judge: openJudge({ models, model: 'faux-reviewer', provider: 'faux' }),
+    judge: openJudge({ models, model: 'faux-reviewer', provider }),
   };
 };
 
-const capturing = (reply: string) => {
+const submits = (verdict: 'pass' | 'fail', findings: string[] = []) =>
+  fauxAssistantMessage(fauxToolCall('submit_verdict', { verdict, findings }), {
+    stopReason: 'toolUse',
+  });
+
+const capturing = () => {
   const seen: TranscriptContext[] = [];
   const step: FauxResponseStep = (context) => {
     seen.push(context);
-    return fauxAssistantMessage(reply);
+    return submits('pass');
   };
   return { seen, step };
 };
 
 describe('the reviewer judging a diff', () => {
-  test('sees one user message with the job, the diff and the checks, and no tools', async () => {
-    const { seen, step } = capturing('PASS');
+  test('sees one user message with the job, the diff and the checks, and only submit_verdict', async () => {
+    const { seen, step } = capturing();
     await setup([step]).judge(input);
     const [context] = seen;
     expect(context?.messages.filter((m) => m.role !== 'system')).toHaveLength(
@@ -80,11 +82,15 @@ describe('the reviewer judging a diff', () => {
     const offered = context?.messages.flatMap((m) =>
       m.role === 'system' ? (m.toolsAdded ?? []) : []
     );
-    expect(offered).toEqual([]);
+    expect(offered?.map((tool) => tool.name)).toEqual(['submit_verdict']);
+    expect(offered?.[0]?.constrainedSampling).toEqual({
+      type: 'json_schema',
+      strict: 'require',
+    });
   });
 
   test('sees nothing of the agent briefing', async () => {
-    const { seen, step } = capturing('PASS');
+    const { seen, step } = capturing();
     await setup([step]).judge(input);
     const seenText = JSON.stringify(seen[0]);
     const briefing = [
@@ -102,28 +108,65 @@ describe('the reviewer judging a diff', () => {
     }
   });
 
-  test('a PASS reply is a pass verdict', async () => {
-    const { verdict } = await setup([fauxAssistantMessage('PASS')]).judge(
-      input
-    );
+  test('a pass submitted through the tool is a pass verdict', async () => {
+    const { verdict } = await setup([submits('pass')]).judge(input);
     expect(verdict).toEqual({ kind: 'pass' });
   });
 
-  test('a FAIL reply is a fail verdict carrying its findings', async () => {
+  test('a fail submitted through the tool carries each finding', async () => {
     const { verdict } = await setup([
-      fauxAssistantMessage('FAIL\n- wrong function'),
+      submits('fail', ['wrong function', 'no test for readToken']),
     ]).judge(input);
-    expect(verdict).toEqual({ kind: 'fail', findings: '- wrong function' });
+    expect(verdict).toEqual({
+      kind: 'fail',
+      findings: '- wrong function\n- no test for readToken',
+    });
   });
 
-  test('a reply that is neither rejects', async () => {
+  test('a fail with no findings still gives the agent a finding', async () => {
+    const { verdict } = await setup([submits('fail')]).judge(input);
+    expect(verdict).toEqual({
+      kind: 'fail',
+      findings: 'The reviewer gave no findings.',
+    });
+  });
+
+  test('a reply without the tool call rejects, even one that says PASS', async () => {
     await expect(
-      setup([fauxAssistantMessage('Looks fine to me')]).judge(input)
-    ).rejects.toThrow(/did not answer PASS or FAIL.*Looks fine/);
+      setup([fauxAssistantMessage('PASS')]).judge(input)
+    ).rejects.toThrow(/did not call submit_verdict.*PASS/);
+  });
+
+  test('arguments outside the verdict schema give no verdict', async () => {
+    await expect(
+      setup([
+        fauxAssistantMessage(
+          fauxToolCall('submit_verdict', { verdict: 'maybe', findings: [] }),
+          { stopReason: 'toolUse' }
+        ),
+      ]).judge(input)
+    ).rejects.toThrow(/ended without an answer.*turn_limit/);
+  });
+
+  test('two verdicts in one reply reject instead of the last one winning', async () => {
+    await expect(
+      setup([
+        fauxAssistantMessage(
+          [
+            fauxToolCall('submit_verdict', {
+              verdict: 'fail',
+              findings: ['wrong function'],
+            }),
+            fauxToolCall('submit_verdict', { verdict: 'pass', findings: [] }),
+          ],
+          { stopReason: 'toolUse' }
+        ),
+      ]).judge(input)
+    ).rejects.toThrow(/called submit_verdict 2 times/);
   });
 
   test('a diff over the cap is cut and the prompt says so', async () => {
-    const { seen, step } = capturing('PASS');
+    const { seen, step } = capturing();
     const diff = `${'a'.repeat(MAX_DIFF_CHARS)}TAIL`;
     await setup([step]).judge({ ...input, diff });
     const text = JSON.stringify(seen[0]);
@@ -132,39 +175,28 @@ describe('the reviewer judging a diff', () => {
   });
 
   test('a diff under the cap is sent whole without a cut note', async () => {
-    const { seen, step } = capturing('PASS');
+    const { seen, step } = capturing();
     await setup([step]).judge(input);
     expect(JSON.stringify(seen[0])).not.toContain('cut to');
   });
 
   test('returns the model calls with the usage the model reported', async () => {
-    const { model, calls } = await setup([fauxAssistantMessage('PASS')]).judge(
-      input
-    );
+    const { model, calls } = await setup([submits('pass')]).judge(input);
     expect(model).toBe('faux-reviewer');
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.outputTokens).toBe(1);
+    expect(calls[0]?.billing).toBe('api');
+    expect(calls[0]?.outputTokens).toBeGreaterThan(0);
     expect(
       (calls[0]?.inputTokens ?? 0) + (calls[0]?.cacheWriteTokens ?? 0)
     ).toBeGreaterThan(0);
   });
-});
 
-describe('parseVerdict', () => {
-  test('reads the first non-empty line, ignoring case and padding', () => {
-    expect(parseVerdict('\n  pass  \nbecause')).toEqual({ kind: 'pass' });
-    expect(parseVerdict('Fail\n\n- a\n- b\n')).toEqual({
-      kind: 'fail',
-      findings: '- a\n- b',
-    });
-  });
-
-  test('a FAIL with nothing after it still gives a finding', () => {
-    expect(parseVerdict('FAIL')).toMatchObject({ kind: 'fail' });
-    expect(parseVerdict('FAIL')).not.toEqual({ kind: 'fail', findings: '' });
-  });
-
-  test('no reply rejects', () => {
-    expect(() => parseVerdict(undefined)).toThrow(/did not answer/);
+  test('a reviewer on the claude-code provider records its calls as subscription calls', async () => {
+    const { calls } = await setup([submits('pass')], 'claude-code').judge(
+      input
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.billing).toBe('subscription');
+    expect(calls[0]?.outputTokens).toBeGreaterThan(0);
   });
 });
