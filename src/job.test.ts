@@ -6,6 +6,7 @@ const spec = {
   text: 'Add a README',
   checks: ['pnpm test'],
   model: 'm',
+  reviewerProvider: 'openrouter' as const,
   reviewerModel: 'rm',
   allowPaths: [],
   policy: { network: false },
@@ -28,6 +29,12 @@ describe('makeJob', () => {
     expect(makeJob({ ...spec, reviewerModel: 'other' }).runId).not.toBe(
       makeJob(spec).runId
     );
+  });
+
+  test('a different reviewer provider makes a different run', () => {
+    expect(
+      makeJob({ ...spec, reviewerProvider: 'claude-code' }).runId
+    ).not.toBe(makeJob(spec).runId);
   });
 
   test('allowing the network makes a different run', () => {

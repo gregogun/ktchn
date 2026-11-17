@@ -10,7 +10,7 @@ import { openJudge } from './reviewer.ts';
 import { isTerminal, replay, type RunState } from './run-machine.ts';
 import { sweepFinishedRuns, sweepOrphanVolumes } from './run-resources.ts';
 import { SANDBOX_IMAGE } from './sandbox.ts';
-import { openRouterModels } from './session.ts';
+import { checkProviderReady, modelsFor } from './session.ts';
 import { buildShell, type SandboxPort } from './shell.ts';
 
 type Leftovers = ReturnType<typeof sweepFinishedRuns>['failed'];
@@ -40,10 +40,20 @@ export type RunEnd =
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
-const modelCost = (ledger: Ledger, runId: string) =>
+export type Spend = { cost: number; subscriptionCalls: number };
+
+const spendOf = (ledger: Ledger, runId: string): Spend =>
   ledger
     .records(runId)
-    .reduce((sum, r) => sum + (r.kind === 'model_call' ? r.call.cost : 0), 0);
+    .reduce(
+      (spend, r) =>
+        r.kind !== 'model_call'
+          ? spend
+          : r.call.billing === 'subscription'
+            ? { ...spend, subscriptionCalls: spend.subscriptionCalls + 1 }
+            : { ...spend, cost: spend.cost + r.call.cost },
+      { cost: 0, subscriptionCalls: 0 }
+    );
 
 /* A stop outcome has released the lease and closed the ledger. A ready one
    hands both to drive(), which releases them whatever the run does, so the
@@ -53,8 +63,9 @@ export const prepareRun = async (opts: {
   home: string;
   runId: string;
   job: Job;
-  report: (progress: { state: RunState; cost: number }) => void;
+  report: (progress: { state: RunState; spend: Spend }) => void;
   checkCanOpenPr?: typeof checkCanOpenPr;
+  checkProviderReady?: typeof checkProviderReady;
   originBase?: typeof originBase;
   sweepOrphanVolumes?: typeof sweepOrphanVolumes;
   readOpenRouterKey?: typeof readOpenRouterKey;
@@ -101,6 +112,9 @@ export const prepareRun = async (opts: {
             message: messageOf(error),
           };
         }
+        await (opts.checkProviderReady ?? checkProviderReady)(
+          (ledger.job(runId) ?? job).reviewerProvider
+        );
       }
       const apiKey = (opts.readOpenRouterKey ?? readOpenRouterKey)();
 
@@ -144,11 +158,12 @@ export const prepareRun = async (opts: {
                   apiKey,
                 }),
               report: (state) =>
-                opts.report({ state, cost: modelCost(ledger, runId) }),
+                opts.report({ state, spend: spendOf(ledger, runId) }),
               sandboxes: opts.sandboxes,
               judge: (opts.openJudge ?? openJudge)({
-                models: openRouterModels(apiKey),
-                model: job.reviewerModel,
+                models: modelsFor(recorded.reviewerProvider, apiKey),
+                provider: recorded.reviewerProvider,
+                model: recorded.reviewerModel,
               }),
               review: opts.review,
             });

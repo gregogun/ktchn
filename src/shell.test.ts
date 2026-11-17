@@ -122,6 +122,7 @@ const world = (policy: Job['policy']) => {
     allowPaths: [],
     policy,
     model: 'm',
+    reviewerProvider: 'openrouter',
     reviewerModel: 'rm',
   });
   return {

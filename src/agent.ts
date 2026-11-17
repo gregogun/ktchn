@@ -7,7 +7,7 @@ import type { ModelCall } from './ledger.ts';
 import { boundAgentEnv } from './agent-env.ts';
 import { COPY_PATH } from './box-scripts.ts';
 import type { Job } from './job.ts';
-import { openRouterModels, openSession } from './session.ts';
+import { modelsFor, openSession } from './session.ts';
 import type { AgentRequest, FreshAgentInput, RunEvent } from './run-machine.ts';
 import type { Skill } from './workflow.ts';
 
@@ -102,8 +102,10 @@ export const openAgent = async (opts: {
 }) => {
   const session = await openSession({
     storage: await openNodeSqliteStorage(opts.storePath),
-    models: openRouterModels(opts.apiKey),
+    models: modelsFor('openrouter', opts.apiKey),
+    provider: 'openrouter',
     model: opts.model,
+    tools: 'coding',
     env: boundAgentEnv(opts.env),
     cwd: COPY_PATH,
     maxTurns: MAX_TURNS,

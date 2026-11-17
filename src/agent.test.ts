@@ -39,6 +39,7 @@ describe('the first prompt', () => {
     checks: ['pnpm test', 'pnpm lint'],
     allowPaths: [],
     model: 'm',
+    reviewerProvider: 'openrouter',
     reviewerModel: 'rm',
   });
   const first = (network: boolean) => prompt({ kind: 'job' }, job(network), []);
@@ -82,6 +83,7 @@ describe('a prompt with a workflow', () => {
     checks: ['pnpm test'],
     allowPaths: [],
     model: 'm',
+    reviewerProvider: 'openrouter',
     reviewerModel: 'rm',
     workflow: {
       name: 'flow',

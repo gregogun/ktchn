@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import type { AgentOutcome } from './agent.ts';
 import { makeJob } from './job.ts';
 import { openLedger } from './ledger.ts';
-import { prepareRun, type RunPreparation } from './run-start.ts';
+import { prepareRun, type RunPreparation, type Spend } from './run-start.ts';
 import { replay, type RunState } from './run-machine.ts';
 import type { AgentSession } from './shell.ts';
 import { git } from './test-git.ts';
@@ -35,16 +35,17 @@ const world = () => {
     allowPaths: [],
     policy: { network: false },
     model: 'm',
+    reviewerProvider: 'openrouter' as const,
     reviewerModel: 'rm',
   });
   const fetched: string[] = [];
-  const reports: { state: RunState; cost: number }[] = [];
+  const reports: { state: RunState; spend: Spend }[] = [];
   const closed: string[] = [];
   const opts = {
     home,
     runId,
     job,
-    report: (progress: { state: RunState; cost: number }) => {
+    report: (progress: { state: RunState; spend: Spend }) => {
       reports.push(progress);
     },
     checkCanOpenPr: () => {},
@@ -289,6 +290,25 @@ describe('prepareRun', () => {
     expect(leaseIsFree(w)).toBe(true);
   });
 
+  test('a reviewer provider that is not ready stops the start before the run begins', async () => {
+    const w = world();
+    const asked: string[] = [];
+    const prepared = await prepareRun({
+      ...w.opts,
+      checkProviderReady: async (provider) => {
+        asked.push(provider);
+        throw new Error('Claude Code is not logged in');
+      },
+    });
+    expect(asked).toEqual(['openrouter']);
+    expect(prepared).toMatchObject({
+      status: 'error',
+      error: new Error('Claude Code is not logged in'),
+    });
+    expect(w.seed().base(w.runId)).toBeUndefined();
+    expect(leaseIsFree(w)).toBe(true);
+  });
+
   test('an origin base that cannot be fetched stops the start with the error and releases the lease', async () => {
     const w = world();
     const prepared = await prepareRun({
@@ -310,27 +330,34 @@ describe('prepareRun', () => {
 });
 
 describe('drive', () => {
-  test('a run that stops without a PR to open is finished, reports its state and cost, and releases the lease', async () => {
+  test('a run that stops without a PR to open is finished, reports its state and spend, and releases the lease', async () => {
     const w = world();
     const call = {
       entryId: 1,
       model: 'm',
+      billing: 'api' as const,
       inputTokens: 1,
       outputTokens: 1,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       cost: 0.25,
     };
+    const subscriptionCall = {
+      ...call,
+      entryId: 2,
+      billing: 'subscription' as const,
+      cost: 0,
+    };
     const prepared = ready(
       await prepareRun({
         ...w.opts,
-        openAgent: async () => endsEarly([call]),
+        openAgent: async () => endsEarly([call, subscriptionCall]),
       })
     );
     expect(await prepared.drive()).toEqual({ status: 'finished' });
     expect(w.reports.at(-1)).toMatchObject({
       state: { status: 'parked' },
-      cost: 0.25,
+      spend: { cost: 0.25, subscriptionCalls: 1 },
     });
     expect(w.closed).toEqual(['sandbox']);
     expect(leaseIsFree(w)).toBe(true);

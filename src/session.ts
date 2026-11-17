@@ -2,15 +2,22 @@ import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
 import { createModels, type Models } from '@earendil-works/pi-ai/models';
 import { openrouterProvider } from '@earendil-works/pi-ai/providers/openrouter';
 import {
+  getClaudeStatus,
+  LOGIN_HINT,
+} from '@earendil-works/pi-claude-code/dist/claude-cli.js';
+import { createClaudeCodeProvider } from '@earendil-works/pi-claude-code/dist/provider.js';
+import {
   createRegistry,
+  defineExtension,
   Harness,
   type Storage,
+  type ToolRegistration,
 } from '@earendil-works/pi-durable';
 import { CodingTools } from '@earendil-works/pi-durable/tools';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import type { ModelCall } from './ledger.ts';
 
-export const openRouterModels = (apiKey: string): Models => {
+const openRouterModels = (apiKey: string): Models => {
   const models = createModels({
     credentials: {
       read: async () => ({ type: 'api_key', key: apiKey }),
@@ -23,6 +30,70 @@ export const openRouterModels = (apiKey: string): Models => {
   return models;
 };
 
+/* claude-code sends each request through the owner's own `claude` CLI, so it
+   bills their Claude subscription and its login never leaves Claude Code.
+*/
+const claudeCodeModels = (): Models => {
+  const models = createModels();
+  models.setProvider(createClaudeCodeProvider());
+  return models;
+};
+
+/* A Claude Code login by API key would bill each call while ktchn records it
+   at cost 0, so only a subscription login counts as ready.
+*/
+const claudeCodeReady = async () => {
+  const status = await getClaudeStatus(process.env);
+  if (!status.available || !status.loggedIn) {
+    throw new Error(status.detail ?? LOGIN_HINT);
+  }
+  if (!status.subscription) {
+    throw new Error(
+      'Claude Code is not signed in with a Claude subscription. Run `claude auth login` with a Pro or Max account.'
+    );
+  }
+};
+
+type Billing = 'api' | 'subscription';
+
+const PROVIDERS = {
+  openrouter: {
+    billing: 'api',
+    models: openRouterModels,
+    ready: async () => {},
+  },
+  'claude-code': {
+    billing: 'subscription',
+    models: claudeCodeModels,
+    ready: claudeCodeReady,
+  },
+} as const satisfies Record<
+  string,
+  {
+    billing: Billing;
+    models: (openRouterKey: string) => Models;
+    ready: () => Promise<void>;
+  }
+>;
+
+export type ProviderId = keyof typeof PROVIDERS;
+
+export const isProviderId = (value: string): value is ProviderId =>
+  Object.hasOwn(PROVIDERS, value);
+
+export const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
+
+export const modelsFor = (provider: ProviderId, openRouterKey: string) =>
+  PROVIDERS[provider].models(openRouterKey);
+
+export const checkProviderReady = (provider: ProviderId) =>
+  PROVIDERS[provider].ready();
+
+const billingOf = (provider: string | undefined): Billing =>
+  provider !== undefined && isProviderId(provider)
+    ? PROVIDERS[provider].billing
+    : 'api';
+
 type Usage = {
   input: number;
   output: number;
@@ -33,6 +104,7 @@ type Usage = {
 
 type AssistantMessage = {
   model?: string;
+  provider?: string;
   usage?: Usage;
   content?: unknown;
 };
@@ -44,17 +116,19 @@ const assistantMessage = (entry: EntryView) =>
     ? (entry.model?.[0] as AssistantMessage | undefined)
     : undefined;
 
-const modelCall = (entry: EntryView): ModelCall | undefined => {
+export const modelCallOf = (entry: EntryView): ModelCall | undefined => {
   const message = assistantMessage(entry);
   if (message?.usage === undefined) return undefined;
+  const billing = billingOf(message.provider);
   return {
     entryId: entry.id,
     model: message.model ?? 'unknown',
+    billing,
     inputTokens: message.usage.input,
     outputTokens: message.usage.output,
     cacheReadTokens: message.usage.cacheRead,
     cacheWriteTokens: message.usage.cacheWrite,
-    cost: message.usage.cost.total,
+    cost: billing === 'subscription' ? 0 : message.usage.cost.total,
   };
 };
 
@@ -78,15 +152,19 @@ export const openSession = async (opts: {
   storage: Storage;
   models: Models;
   model: string;
-  provider?: string;
+  provider: string;
   instructions?: string;
-  tools?: 'coding' | 'none';
+  tools: 'coding' | readonly ToolRegistration[];
   env?: ExecutionEnv;
   cwd?: string;
   maxTurns?: number;
 }) => {
   const registry = createRegistry();
-  if (opts.tools !== 'none') registry.install(CodingTools);
+  registry.install(
+    opts.tools === 'coding'
+      ? CodingTools
+      : defineExtension({ name: 'tools', tools: [...opts.tools] })
+  );
   const { env } = opts;
 
   const harness = await Harness.open(
@@ -101,7 +179,7 @@ export const openSession = async (opts: {
   const root = await harness.root(ctx, {
     agent: {
       model: {
-        provider: opts.provider ?? 'openrouter',
+        provider: opts.provider,
         modelId: opts.model,
       },
       instructions: opts.instructions,
@@ -118,7 +196,7 @@ export const openSession = async (opts: {
     do {
       const page = await root.entries({ order: 'ascending' }, 100, cursor, ctx);
       for (const entry of page.items) {
-        const call = modelCall(entry);
+        const call = modelCallOf(entry);
         if (call) calls.push(call);
         const message = assistantMessage(entry);
         if (message !== undefined) reply = textOf(message);

@@ -9,6 +9,7 @@ import type { Skill } from './workflow.ts';
 export type ModelCall = {
   entryId: number;
   model: string;
+  billing: 'api' | 'subscription';
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -90,8 +91,16 @@ export const openLedger = (path: string) => {
       records(runId).find((r) => r.kind === 'run_started')?.baseBranch,
     base: (runId: string) =>
       records(runId).find((r) => r.kind === 'run_started')?.base,
-    job: (runId: string) =>
-      records(runId).find((r) => r.kind === 'run_started')?.job,
+    job: (runId: string): Job | undefined => {
+      const job = records(runId).find((r) => r.kind === 'run_started')?.job;
+      // A job recorded before the reviewer had a provider ran it on OpenRouter.
+      return (
+        job && {
+          ...job,
+          reviewerProvider: job.reviewerProvider ?? 'openrouter',
+        }
+      );
+    },
     appendEvent: (runId: string, at: number, event: RunEvent) =>
       append(runId, `event:${at}`, { kind: 'run_event', event }),
     recordModelCall: (runId: string, session: string, call: ModelCall) =>

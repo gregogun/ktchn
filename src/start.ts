@@ -6,12 +6,15 @@ import { parseArgs } from 'node:util';
 import { DEFAULT_MODEL } from './agent.ts';
 import { makeJob, runIdOf } from './job.ts';
 import { openLedger } from './ledger.ts';
-import { DEFAULT_REVIEWER_MODEL } from './reviewer.ts';
+import {
+  DEFAULT_REVIEWER_MODELS,
+  DEFAULT_REVIEWER_PROVIDER,
+} from './reviewer.ts';
 import { prepareRun } from './run-start.ts';
+import { isProviderId, PROVIDER_IDS } from './session.ts';
 import { loadWorkflow } from './workflow.ts';
 
-const usage =
-  'usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--reviewer-model <id>] [--network] [--workflow <name>]';
+const usage = `usage: node src/start.ts <repo> <job text> [--check "<command>"]... [--allow-path "<glob>"]... [--model <id>] [--reviewer-provider <${PROVIDER_IDS.join('|')}>] [--reviewer-model <id>] [--network] [--workflow <name>]`;
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -19,13 +22,23 @@ const { positionals, values } = parseArgs({
     check: { type: 'string', multiple: true, default: [] },
     'allow-path': { type: 'string', multiple: true, default: [] },
     model: { type: 'string', default: DEFAULT_MODEL },
-    'reviewer-model': { type: 'string', default: DEFAULT_REVIEWER_MODEL },
+    'reviewer-provider': {
+      type: 'string',
+      default: DEFAULT_REVIEWER_PROVIDER,
+    },
+    'reviewer-model': { type: 'string' },
     network: { type: 'boolean', default: false },
     workflow: { type: 'string' },
   },
 });
 const [repoArg, text] = positionals;
-if (repoArg === undefined || text === undefined || positionals.length > 2) {
+const reviewerProvider = values['reviewer-provider'];
+if (
+  repoArg === undefined ||
+  text === undefined ||
+  positionals.length > 2 ||
+  !isProviderId(reviewerProvider)
+) {
   console.error(usage);
   process.exit(2);
 }
@@ -36,7 +49,9 @@ const spec = {
   checks: values.check,
   allowPaths: values['allow-path'],
   model: values.model,
-  reviewerModel: values['reviewer-model'],
+  reviewerProvider,
+  reviewerModel:
+    values['reviewer-model'] ?? DEFAULT_REVIEWER_MODELS[reviewerProvider],
   policy: { network: values.network },
 };
 const runId = runIdOf(spec, values.workflow);
@@ -79,9 +94,14 @@ const run = await prepareRun({
   home,
   runId,
   job,
-  report: ({ state, cost }) => {
+  report: ({ state, spend }) => {
+    const n = spend.subscriptionCalls;
+    const unpriced =
+      n === 0
+        ? ''
+        : ` plus ${n} subscription ${n === 1 ? 'call' : 'calls'} with no per-call price`;
     console.log(
-      `run ${runId} is ${JSON.stringify(state)}; model cost $${cost.toFixed(4)}`
+      `run ${runId} is ${JSON.stringify(state)}; model cost $${spend.cost.toFixed(4)}${unpriced}`
     );
   },
 });
